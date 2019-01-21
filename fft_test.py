@@ -78,7 +78,7 @@ gyro[:, 0] = np.array(tf)
 # [t, accx, accy, accz, gyrox, gyro y, gyro z]
 data = np.hstack((acc[:, 0:4], gyro[:, 1:4]))
 
-
+# TODO: spectrum comparison function
 n_feature = data.shape[1]-1
 for i in range(0, n_feature):
     x, y = fft(data[:, i+1])
@@ -86,11 +86,21 @@ for i in range(0, n_feature):
 plt.legend(loc='upper left')
 plt.show()
 
+# validation for hypothesis: spectrum among different time range should be similar
+# result: yeah!
+# TODO: trim outlier time ranges
+for i in range(0, n_feature):
+    for j in range(0,7):
+        x, y = fft(data[1000*j:1000*(j+1), i+1])
+        plt.scatter(x, y, label=1000*j+i, alpha=.5, s=100*y)
+    plt.legend(loc='upper left')
+    plt.show()
+
 # WARNING Scaler is in question...
-scaler = StandardScaler()
-data = scaler.fit_transform(data[:,1:])
-pca = PCA().fit(data[:,1:])
-print(pca.explained_variance_ratio_)
+# scaler = StandardScaler()
+# data = scaler.fit_transform(data[:,1:])
+# pca = PCA().fit(data[:,1:])
+# print(pca.explained_variance_ratio_)
 
 
 
