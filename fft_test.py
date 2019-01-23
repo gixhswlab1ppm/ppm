@@ -17,13 +17,14 @@ from sklearn.preprocessing import StandardScaler
 
 
 def fft(y_temp, topk=.1):
-    y_temp -= np.mean(y_temp)
+    # y_temp -= np.mean(y_temp)
     y_freq = np.fft.rfft(y_temp)
     y_freq_abs = np.abs(y_freq)
     x_freq = np.fft.rfftfreq(len(y_temp), d=sample_rate)
     if topk <= 0:
         y_freq_idx_by_amp = np.argsort(y_freq_abs)[::-1]
-        return x_freq, y_freq_abs/y_freq_abs.max()
+        # return x_freq, y_freq_abs/y_freq_abs.max()
+        return x_freq, y_freq_abs
     else:
         if topk < 1:
             topk = int(topk*len(y_freq))
@@ -33,7 +34,8 @@ def fft(y_temp, topk=.1):
         y_freq_filtered = y_freq.copy()
         y_freq_filtered[y_freq_mask] = 0
         y_freq_abs_filtered = np.abs(y_freq_filtered)
-        return x_freq, y_freq_abs_filtered/y_freq_abs_filtered.max()
+        # return x_freq, y_freq_abs_filtered/y_freq_abs_filtered.max()
+        return x_freq, y_freq_abs_filtered
 
     #plt.figure()
     #plt.plot(freq_frequencies, freq_map_abs/freq_map_abs.max(), alpha=.2)
@@ -82,7 +84,8 @@ data = np.hstack((acc[:, 0:4], gyro[:, 1:4]))
 n_feature = data.shape[1]-1
 for i in range(0, n_feature):
     x, y = fft(data[:, i+1])
-    plt.scatter(x, y, label=i, alpha=.5, s=100*y)
+    # plt.scatter(x, y, label=i, alpha=.5, s=100*y)
+    plt.scatter(x, y, label=i, alpha=.5)
 plt.legend(loc='upper left')
 plt.show()
 
@@ -90,18 +93,30 @@ plt.show()
 # result: yeah!
 # TODO: trim outlier time ranges
 for i in range(0, n_feature):
-    for j in range(0,7):
-        x, y = fft(data[1000*j:1000*(j+1), i+1])
-        plt.scatter(x, y, label=1000*j+i, alpha=.5, s=100*y)
-    plt.legend(loc='upper left')
+    plt.figure(str(i) + '-th spectrum;')
+    n_window = 6
+    n_winlen = math.floor(data.shape[0]/n_window)
+    
+    print('Feature {0}'.format(i))
+    for j in range(0, n_window):
+        x, y = fft(data[n_winlen*j:n_winlen*(j+1), i+1])
+        
+        plt.scatter(x+j*20, y, label=n_winlen*j+i, alpha=.5)
+        
+        print('Main freq:', x[np.argmax(y)])
+        # plt.legend(loc='upper left')
+    plt.xlim(0, 20 * n_window)
+
+    plt.figure(str(i) + '-th data')
+    plt.plot(data[:, 0], data[:, i+1])
     plt.show()
+
 
 # WARNING Scaler is in question...
 # scaler = StandardScaler()
 # data = scaler.fit_transform(data[:,1:])
 # pca = PCA().fit(data[:,1:])
 # print(pca.explained_variance_ratio_)
-
 
 
 pass
