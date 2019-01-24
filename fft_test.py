@@ -33,13 +33,8 @@ def fft(y_temp, topk=.1):
     y_freq = np.fft.rfft(y_temp)
     y_freq_abs = np.abs(y_freq)
     x_freq = np.fft.rfftfreq(len(y_temp), d=sample_rate)
-    if topk <= 0:
-        y_freq_idx_by_amp = np.argsort(y_freq_abs)[::-1]
-        # return x_freq, y_freq_abs/y_freq_abs.max()
-        return x_freq, y_freq_abs
-    else:
-        if topk < 1:
-            topk = int(topk*len(y_freq))
+    if topk != None:
+        topk = int(topk*len(y_freq)) if topk<1 else topk
         y_freq_idx_by_amp = np.argsort(y_freq_abs)[::-1][:topk]
         y_freq_mask = np.ones(len(y_freq), dtype=bool)
         y_freq_mask[y_freq_idx_by_amp] = False
@@ -48,6 +43,8 @@ def fft(y_temp, topk=.1):
         y_freq_abs_filtered = np.abs(y_freq_filtered)
         # return x_freq, y_freq_abs_filtered/y_freq_abs_filtered.max()
         return x_freq, y_freq_abs_filtered
+    else: 
+        return x_freq, y_freq_abs
 
     #plt.figure()
     #plt.plot(freq_frequencies, freq_map_abs/freq_map_abs.max(), alpha=.2)
@@ -114,25 +111,33 @@ plt.show()
 # TODO: trim outlier time ranges
 # TODO: find partial-data main period versus overal period variance in different n_window settings (window_length in fact)
 
+
 period_poll = []
+t_window = 10
+n_window = math.floor(data[-1, 0]/t_window)
+n_winlen = math.floor(data.shape[0]/n_window)
+fft_freqs = np.fft.rfftfreq(n_winlen, d=sample_rate)
+fft_topk = 20
+fft_amps = np.ndarray((n_feature, n_window, len(fft_freqs))) # 2D (feature, window) array of (list of) amps
 
 for i in range(0, n_feature):
     plt.figure(str(i) + '-th spectrum;')
-    t_window = 10
-    n_window = math.floor(data[-1, 0]/t_window)
-    n_winlen = math.floor(data.shape[0]/n_window)
 
     print('Feature {0}'.format(i))
     for j in range(0, n_window):
-        x, y = fft(data[n_winlen*j:n_winlen*(j+1), i+1], topk=.05)
+        x, y = fft(data[n_winlen*j:n_winlen*(j+1), i+1], topk=fft_topk)
+        fft_amps[i,j,:] = y.copy()
         # plt.scatter(x+j*20, y, label=n_winlen*j+i, alpha=.5)
         plt.scatter(1/x, y, label=n_winlen*j+i, alpha=.5, s=100*y/max(y))
         # print('Main freq:', x[np.argmax(y)], np.argmax(y))
 
-        period = 1/x[np.argmax(y)]
+        main_signal_idx = np.argmax(y)
+        main_signal_period = 1/x[main_signal_idx]
+        main_signal_amp = y[main_signal_idx]
 
-        if period >= swing_period[0] and period <= swing_period[1]:
-            period_poll.append(period)
+        if main_signal_period >= swing_period[0] and main_signal_period <= swing_period[1]:
+            period_poll.append((main_signal_period, main_signal_amp))
+
             # print('Main period:', 1/x[np.argmax(y)])
         # plt.legend(loc='upper left')
     # overall fft
@@ -141,7 +146,13 @@ for i in range(0, n_feature):
     plt.figure(str(i) + '-th data')
     plt.plot(data[:, 0], data[:, i+1])
 
-print('Predicted main period', Counter(period_poll).most_common(1))
+# TODO: handle empty array case
+period_pred = np.max([val for val, count in Counter([p for p,a in period_poll]).most_common(1)])
+print('Predicted main period', period_pred)
+
+
+
+
 
 plt.show()
 ## endif
