@@ -120,7 +120,7 @@ for i in range(0, n_feature):
     for j in range(0, n_window):
         x, y = fft(data[n_winlen*j:n_winlen*(j+1), i+1], topk=.05)
         # plt.scatter(x+j*20, y, label=n_winlen*j+i, alpha=.5)
-        plt.scatter(x, y, label=n_winlen*j+i, alpha=.5)
+        plt.scatter(1/x, y, label=n_winlen*j+i, alpha=.5, s=100*y/max(y))
         # print('Main freq:', x[np.argmax(y)], np.argmax(y))
         print('Main period:', 1/x[np.argmax(y)])
         # plt.legend(loc='upper left')
