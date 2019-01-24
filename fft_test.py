@@ -14,6 +14,10 @@ from scipy import signal
 import math
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+from collections import Counter
+
+swing_period = (1.5, 3)
+
 
 def fft(y_temp, topk=.1):
     """
@@ -75,10 +79,9 @@ def fft(y_temp, topk=.1):
     # return (x_freq, y_freq_abs) # x: frequency, y: amplititude
 
 
-
 # align to nearest sampling time
-acc = pd.read_csv('accelerometer_cutuy_swing_walk.csv', header=0).values
-gyro = pd.read_csv('gyroscope_cutuy_swing_walk.csv', header=0).values
+acc = pd.read_csv('accelerometer_josh_swing_walk.csv', header=0).values
+gyro = pd.read_csv('gyroscope_josh_swing_walk.csv', header=0).values
 tf = np.arange(0, min(np.max(acc[:, 0]), np.max(gyro[:, 0])), sample_rate)
 acc = acc[[np.argmin(abs(acc[:, 0]-t)) for t in tf]]
 acc[:, 0] = np.array(tf)
@@ -92,13 +95,13 @@ data = np.hstack((acc[:, 0:4], gyro[:, 1:4]))
 n_feature = data.shape[1]-1
 
 
-
 ## if VIZ
 for i in range(0, n_feature):
     x, y = fft(data[:, i+1])
     print("All Data")
     ind_y = np.argsort(y)[::-1]
-    print("Main periods: ", 1/x[ind_y[0]], 1/x[ind_y[1]], 1/x[ind_y[2]], 1/x[ind_y[3]], 1/x[ind_y[4]], 1/x[ind_y[5]])
+    print("Main periods: ", 1/x[ind_y[0]], 1/x[ind_y[1]], 1 /
+          x[ind_y[2]], 1/x[ind_y[3]], 1/x[ind_y[4]], 1/x[ind_y[5]])
     # plt.scatter(x, y, label=i, alpha=.5, s=100*y)
     plt.scatter(x, y, label=i, alpha=.5)
 plt.legend(loc='upper left')
@@ -110,30 +113,38 @@ plt.show()
 # result: yeah!
 # TODO: trim outlier time ranges
 # TODO: find partial-data main period versus overal period variance in different n_window settings (window_length in fact)
+
+period_poll = []
+
 for i in range(0, n_feature):
     plt.figure(str(i) + '-th spectrum;')
     t_window = 10
-    n_window = math.floor(data[-1,0]/t_window)
+    n_window = math.floor(data[-1, 0]/t_window)
     n_winlen = math.floor(data.shape[0]/n_window)
-    
+
     print('Feature {0}'.format(i))
     for j in range(0, n_window):
         x, y = fft(data[n_winlen*j:n_winlen*(j+1), i+1], topk=.05)
         # plt.scatter(x+j*20, y, label=n_winlen*j+i, alpha=.5)
         plt.scatter(1/x, y, label=n_winlen*j+i, alpha=.5, s=100*y/max(y))
         # print('Main freq:', x[np.argmax(y)], np.argmax(y))
-        print('Main period:', 1/x[np.argmax(y)])
+
+        period = 1/x[np.argmax(y)]
+
+        if period >= swing_period[0] and period <= swing_period[1]:
+            period_poll.append(period)
+            # print('Main period:', 1/x[np.argmax(y)])
         # plt.legend(loc='upper left')
     # overall fft
-    plt.xlim(0, 10) # max freq should be at the 2nd column
+    plt.xlim(0, 10)  # max freq should be at the 2nd column
     plt.legend(loc='upper right')
     plt.figure(str(i) + '-th data')
     plt.plot(data[:, 0], data[:, i+1])
 
+print('Predicted main period', Counter(period_poll).most_common(1))
+
 plt.show()
 ## endif
-
-
 
 
 # WARNING Scaler is in question...
