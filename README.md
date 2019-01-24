@@ -11,4 +11,5 @@ It's using Python and Arduino/Raspberry Pi. It does ML via sklearn, and data viz
 Run the file
 
 # Notes:
-Manually measured swing period: 2s
+Manually measured swing-period:
+cutuy_swing_walk 2s
