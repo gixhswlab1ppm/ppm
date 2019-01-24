@@ -15,9 +15,17 @@ import math
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
-
 def fft(y_temp, topk=.1):
-    # y_temp -= np.mean(y_temp)
+    """
+    Given a feature vector (1-D) sorted in time domain, this function performs a Fast DFT (real part only) and returns:
+    x_freq: frequencies in frequency domain
+    y_freq_abs | y_freq_abs_filtered: amplitude in frequency domain 
+
+    Arguments:
+    y_temp: feature vector in time domain
+    topk: \in (0,1) | [1, len(y_temp)]; returns the top frequencies & amplitudes by top percentage or count
+    """
+    y_temp -= np.mean(y_temp)
     y_freq = np.fft.rfft(y_temp)
     y_freq_abs = np.abs(y_freq)
     x_freq = np.fft.rfftfreq(len(y_temp), d=sample_rate)
@@ -67,14 +75,14 @@ def fft(y_temp, topk=.1):
     # return (x_freq, y_freq_abs) # x: frequency, y: amplititude
 
 
+
 # align to nearest sampling time
-acc = pd.read_csv('accelerometer.csv', header=0).values
-gyro = pd.read_csv('gyroscope.csv', header=0).values
-tf = np.arange(0, math.floor(
-    min(np.max(acc[:, 0]), np.max(gyro[:, 0]))), sample_rate)
-acc = acc[[np.argmin(abs(acc[:, 0]-t), 0) for t in tf]]
+acc = pd.read_csv('accelerometer_cutuy_swing_walk.csv', header=0).values
+gyro = pd.read_csv('gyroscope_cutuy_swing_walk.csv', header=0).values
+tf = np.arange(0, min(np.max(acc[:, 0]), np.max(gyro[:, 0])), sample_rate)
+acc = acc[[np.argmin(abs(acc[:, 0]-t)) for t in tf]]
 acc[:, 0] = np.array(tf)
-gyro = gyro[[np.argmin(abs(acc[:, 0]-t), 0) for t in tf]]
+gyro = gyro[[np.argmin(abs(gyro[:, 0]-t)) for t in tf]]
 gyro[:, 0] = np.array(tf)
 
 # [t, accx, accy, accz, gyrox, gyro y, gyro z]
@@ -82,34 +90,50 @@ data = np.hstack((acc[:, 0:4], gyro[:, 1:4]))
 
 # TODO: spectrum comparison function
 n_feature = data.shape[1]-1
+
+
+
+## if VIZ
 for i in range(0, n_feature):
     x, y = fft(data[:, i+1])
+    print("All Data")
+    ind_y = np.argsort(y)[::-1]
+    print("Main periods: ", 1/x[ind_y[0]], 1/x[ind_y[1]], 1/x[ind_y[2]], 1/x[ind_y[3]], 1/x[ind_y[4]], 1/x[ind_y[5]])
     # plt.scatter(x, y, label=i, alpha=.5, s=100*y)
     plt.scatter(x, y, label=i, alpha=.5)
 plt.legend(loc='upper left')
 plt.show()
+## endif
 
+## if VIZ
 # validation for hypothesis: spectrum among different time range should be similar
 # result: yeah!
 # TODO: trim outlier time ranges
+# TODO: find partial-data main period versus overal period variance in different n_window settings (window_length in fact)
 for i in range(0, n_feature):
     plt.figure(str(i) + '-th spectrum;')
-    n_window = 6
+    t_window = 10
+    n_window = math.floor(data[-1,0]/t_window)
     n_winlen = math.floor(data.shape[0]/n_window)
     
     print('Feature {0}'.format(i))
     for j in range(0, n_window):
-        x, y = fft(data[n_winlen*j:n_winlen*(j+1), i+1])
-        
-        plt.scatter(x+j*20, y, label=n_winlen*j+i, alpha=.5)
-        
-        print('Main freq:', x[np.argmax(y)])
+        x, y = fft(data[n_winlen*j:n_winlen*(j+1), i+1], topk=.05)
+        # plt.scatter(x+j*20, y, label=n_winlen*j+i, alpha=.5)
+        plt.scatter(x, y, label=n_winlen*j+i, alpha=.5)
+        # print('Main freq:', x[np.argmax(y)], np.argmax(y))
+        print('Main period:', 1/x[np.argmax(y)])
         # plt.legend(loc='upper left')
-    plt.xlim(0, 20 * n_window)
-
+    # overall fft
+    plt.xlim(0, 10) # max freq should be at the 2nd column
+    plt.legend(loc='upper right')
     plt.figure(str(i) + '-th data')
     plt.plot(data[:, 0], data[:, i+1])
-    plt.show()
+
+plt.show()
+## endif
+
+
 
 
 # WARNING Scaler is in question...
@@ -131,16 +155,5 @@ pass
 # #plt.show()
 
 
-# fft(y[3357:3726]) # single swing
-# fft(y[5000:6000])
-# fft(y[5000:7000])
-# fft(y[2000:6000])
-# plt.show()
-
-# plt.figure(2)
-# plt.plot(y1, alpha=.5)
-# plt.plot(y2, alpha=.5)
-# plt.show()
-
-
-# TODO: adjacent frequencies combination
+# TODO: CANCELLED adjacent frequencies combination
+# This is not mathematically correct.
