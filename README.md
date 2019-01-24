@@ -9,3 +9,6 @@ It's using Python and Arduino/Raspberry Pi. It does ML via sklearn, and data viz
 
 # Usage Instructions
 Run the file
+
+# Notes:
+Manually measured swing period: 2s
