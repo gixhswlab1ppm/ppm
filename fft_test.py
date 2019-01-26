@@ -15,9 +15,10 @@ import math
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from collections import Counter
+import ujson
 
 swing_period = (1.5, 3)
-
+source = 'mpu' # 'phone'
 
 def fft(y_temp, topk=.1):
     """
@@ -75,21 +76,32 @@ def fft(y_temp, topk=.1):
     # #plt.plot(y)
     # return (x_freq, y_freq_abs) # x: frequency, y: amplititude
 
+if source == 'mpu':
+    mpu = ujson.load(open('recordings2.json','r'))
+    mpu = np.array(mpu)
+    mpu[:,0] -= mpu[0,0]
+    tf = np.arange(0, np.max(mpu[:, 0]), sample_rate)
+    mpu = mpu[[np.argmin(abs(mpu[:, 0]-t)) for t in tf]]
+    mpu[:, 0] = np.array(tf)
 
-# align to nearest sampling time
-acc = pd.read_csv('accelerometer_josh_swing_walk.csv', header=0).values
-gyro = pd.read_csv('gyroscope_josh_swing_walk.csv', header=0).values
-tf = np.arange(0, min(np.max(acc[:, 0]), np.max(gyro[:, 0])), sample_rate)
-acc = acc[[np.argmin(abs(acc[:, 0]-t)) for t in tf]]
-acc[:, 0] = np.array(tf)
-gyro = gyro[[np.argmin(abs(gyro[:, 0]-t)) for t in tf]]
-gyro[:, 0] = np.array(tf)
+    data = mpu[:, 0:7]
+    n_feature = 6
 
-# [t, accx, accy, accz, gyrox, gyro y, gyro z]
-data = np.hstack((acc[:, 0:4], gyro[:, 1:4]))
+else: # source == 'phone'
+    # align to nearest sampling time
+    acc = pd.read_csv('accelerometer_josh_swing_walk.csv', header=0).values
+    gyro = pd.read_csv('gyroscope_josh_swing_walk.csv', header=0).values
+    tf = np.arange(0, min(np.max(acc[:, 0]), np.max(gyro[:, 0])), sample_rate)
+    acc = acc[[np.argmin(abs(acc[:, 0]-t)) for t in tf]]
+    acc[:, 0] = np.array(tf)
+    gyro = gyro[[np.argmin(abs(gyro[:, 0]-t)) for t in tf]]
+    gyro[:, 0] = np.array(tf)
 
-# TODO: spectrum comparison function
-n_feature = data.shape[1]-1
+    # [t, accx, accy, accz, gyrox, gyro y, gyro z]
+    data = np.hstack((acc[:, 0:4], gyro[:, 1:4]))
+
+    # TODO: spectrum comparison function
+    n_feature = data.shape[1]-1
 
 
 ## if VIZ
@@ -121,7 +133,8 @@ fft_topk = 20
 fft_amps = np.ndarray((n_feature, n_window, len(fft_freqs))) # 2D (feature, window) array of (list of) amps
 
 for i in range(0, n_feature):
-    plt.figure(str(i) + '-th spectrum;')
+
+    plt.figure(str(i) + '-th spectrum')
 
     print('Feature {0}'.format(i))
     for j in range(0, n_window):
@@ -129,7 +142,7 @@ for i in range(0, n_feature):
         fft_amps[i,j,:] = y.copy()
         # plt.scatter(x+j*20, y, label=n_winlen*j+i, alpha=.5)
         plt.scatter(1/x, y, label=n_winlen*j+i, alpha=.5, s=100*y/max(y))
-        # print('Main freq:', x[np.argmax(y)], np.argmax(y))
+        print('Main freq:', x[np.argmax(y)], np.argmax(y))
 
         main_signal_idx = np.argmax(y)
         main_signal_period = 1/x[main_signal_idx]
@@ -147,8 +160,10 @@ for i in range(0, n_feature):
     plt.plot(data[:, 0], data[:, i+1])
 
 # TODO: handle empty array case
-period_pred = np.max([val for val, count in Counter([p for p,a in period_poll]).most_common(1)])
-print('Predicted main period', period_pred)
+# period_pred = np.max([val for val, count in Counter([p for p,a in period_poll]).most_common(1)])
+# print('Predicted main period', period_pred)
+
+# TODO: {outlier detection | swing detection} by levels: window, timestamp?
 
 
 

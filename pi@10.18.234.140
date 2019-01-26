@@ -1,0 +1,27 @@
+import time
+import smbus2
+import struct
+
+i2c_address = 0x68
+sleep_reg = 0x6B
+data_reg_start = 0x3B
+data_reg_end = 0x48
+
+bus = None
+
+bus = smbus2.SMBus(1)
+bus.write_byte_data(i2c_address, sleep_reg, 0x00)  # Rpi -> MPU
+
+while True:
+    last_time = time.time()
+    # overwrite buffer
+    bus.write_byte(i2c_address, data_reg_start)  # setting reg-read start position?
+    data = []
+    for i in range(data_reg_start, data_reg_end+1, 2):
+        offset = i - data_reg_start
+        byte_0 = chr(bus.read_byte_data(i2c_address, i))
+        byte_1 = chr(bus.read_byte_data(i2c_address, i+1))
+        data.append(struct.unpack('>h', byte_0+byte_1))  # 2 bytes per int
+    print(time.time() - last_time)
+    last_time = time.time()
+    print(data)
