@@ -4,33 +4,33 @@
 #include "Arduino.h"
 #include "Wire.h"
 
-#define MPU6050_ADDR         0x68
-#define MPU6050_SMPLRT_DIV   0x19
-#define MPU6050_CONFIG       0x1a
-#define MPU6050_GYRO_CONFIG  0x1b
+#define MPU6050_ADDR 0x68
+#define MPU6050_SMPLRT_DIV 0x19
+#define MPU6050_CONFIG 0x1a
+#define MPU6050_GYRO_CONFIG 0x1b
 #define MPU6050_ACCEL_CONFIG 0x1c
-#define MPU6050_WHO_AM_I     0x75
-#define MPU6050_PWR_MGMT_1   0x6b
-#define MPU6050_TEMP_H       0x41
-#define MPU6050_TEMP_L       0x42
+#define MPU6050_WHO_AM_I 0x75
+#define MPU6050_PWR_MGMT_1 0x6b
+#define MPU6050_TEMP_H 0x41
+#define MPU6050_TEMP_L 0x42
 
+typedef struct _packet
+{
+	float temp;
+	float accx;
+	float accy;
+	float accz;
+	float gyrox;
+	float gyroy;
+	float gyroz;
+	int16_t a0;
+	int16_t a1;
+	int16_t a2;
+} packet;
 
-typedef struct _packet{
-  float temp;
-  float accx;
-  float accy;
-  float accz;
-  float gyrox;
-  float gyroy;
-  float gyroz;
-  int16_t a0;
-  int16_t a1;
-  int16_t a2;
-}packet;
-
-class MPU6050{
-	public:
-
+class MPU6050
+{
+  public:
 	MPU6050(TwoWire &w);
 	MPU6050(TwoWire &w, float aC, float gC);
 
@@ -41,72 +41,72 @@ class MPU6050{
 	void writeMPU6050(byte reg, byte data);
 	byte readMPU6050(byte reg);
 
-	int16_t getRawAccX(){ return rawAccX; };
-	int16_t getRawAccY(){ return rawAccY; };
-	int16_t getRawAccZ(){ return rawAccZ; };
+	int16_t getRawAccX() { return rawAccX; };
+	int16_t getRawAccY() { return rawAccY; };
+	int16_t getRawAccZ() { return rawAccZ; };
 
-	int16_t getRawTemp(){ return rawTemp; };
+	int16_t getRawTemp() { return rawTemp; };
 
-	int16_t getRawGyroX(){ return rawGyroX; };
-	int16_t getRawGyroY(){ return rawGyroY; };
-	int16_t getRawGyroZ(){ return rawGyroZ; };
+	int16_t getRawGyroX() { return rawGyroX; };
+	int16_t getRawGyroY() { return rawGyroY; };
+	int16_t getRawGyroZ() { return rawGyroZ; };
 
-	float getTemp(){ return temp; };
+	float getTemp() { return temp; };
 
-	float getAccX(){ return accX; };
-	float getAccY(){ return accY; };
-	float getAccZ(){ return accZ; };
+	float getAccX() { return accX; };
+	float getAccY() { return accY; };
+	float getAccZ() { return accZ; };
 
-	float getGyroX(){ return gyroX; };
-	float getGyroY(){ return gyroY; };
-	float getGyroZ(){ return gyroZ; };
+	float getGyroX() { return gyroX; };
+	float getGyroY() { return gyroY; };
+	float getGyroZ() { return gyroZ; };
 
 	void calcGyroOffsets(bool console = false);
 
-	float getGyroXoffset(){ return gyroXoffset; };
-	float getGyroYoffset(){ return gyroYoffset; };
-	float getGyroZoffset(){ return gyroZoffset; };
+	float getGyroXoffset() { return gyroXoffset; };
+	float getGyroYoffset() { return gyroYoffset; };
+	float getGyroZoffset() { return gyroZoffset; };
 
 	void update();
 
-	float getAccAngleX(){ return angleAccX; };
-	float getAccAngleY(){ return angleAccY; };
+	float getAccAngleX() { return angleAccX; };
+	float getAccAngleY() { return angleAccY; };
 
-	float getGyroAngleX(){ return angleGyroX; };
-	float getGyroAngleY(){ return angleGyroY; };
-	float getGyroAngleZ(){ return angleGyroZ; };
+	float getGyroAngleX() { return angleGyroX; };
+	float getGyroAngleY() { return angleGyroY; };
+	float getGyroAngleZ() { return angleGyroZ; };
 
-	float getAngleX(){ return angleX; };
-	float getAngleY(){ return angleY; };
-	float getAngleZ(){ return angleZ; };
+	float getAngleX() { return angleX; };
+	float getAngleY() { return angleY; };
+	float getAngleZ() { return angleZ; };
 
-	void getPacket(packet* p){
+	void getPacket(packet *p)
+	{
 		p->temp = temp;
 		p->accx = accX;
 		p->accy = accY;
-		p->accz = accZ;		
+		p->accz = accZ;
 		p->gyrox = gyroX;
 		p->gyroy = gyroY;
 		p->gyroz = gyroZ;
 	}
 
-	private:
-
+  private:
 	TwoWire *wire;
 
 	int16_t rawAccX, rawAccY, rawAccZ, rawTemp,
-	rawGyroX, rawGyroY, rawGyroZ;
+		rawGyroX, rawGyroY, rawGyroZ;
 
 	float gyroXoffset, gyroYoffset, gyroZoffset;
 
 	float temp, accX, accY, accZ, gyroX, gyroY, gyroZ;
 
 	float angleGyroX, angleGyroY, angleGyroZ,
-	angleAccX, angleAccY, angleAccZ;
+		angleAccX, angleAccY, angleAccZ;
 
 	float angleX, angleY, angleZ;
 
-  float interval;
+	float interval;
 	long preInterval;
 
 	float accCoef, gyroCoef;

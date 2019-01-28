@@ -9,6 +9,7 @@ long timer = 0;
 
 void setup() {
   pinMode(13, OUTPUT);
+  pinMode(7, INPUT);
   Serial.begin(9600);
   Wire.begin();
   mpu6050.begin();
@@ -16,6 +17,11 @@ void setup() {
 }
 
 void loop() {
+  if (digitalRead(7) == 0){
+    delay(1000);
+    return;
+  }
+
   Serial.print('!');
   
   mpu6050.update();

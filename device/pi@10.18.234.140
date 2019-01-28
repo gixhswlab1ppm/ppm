@@ -7,9 +7,6 @@ n_wf = 0
 n_all = 0
 #print(ser.in_waiting)
 
-def rt_process(entry):
-    print(entry)
-    
 while True:
     dev.read_until('!'.encode())
     res = dev.read_until('@'.encode())
@@ -24,5 +21,6 @@ while True:
     # ser.flush()
     #time.sleep(0.5)
 
-
+def rt_process(entry):
+    print(entry)
 
