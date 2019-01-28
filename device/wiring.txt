@@ -1,0 +1,1 @@
+RPi <-> Arduino Uno <-> 3 x Contact Mic (A0-A2) + 1 x IMU (A4-A5)
