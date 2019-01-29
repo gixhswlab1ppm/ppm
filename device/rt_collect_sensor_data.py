@@ -11,6 +11,8 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from collections import Counter
 import ujson
+from scipy import stats
+from scipy.signal import argrelextrema
 
 swing_period = (1.5, 3)
 
@@ -41,14 +43,23 @@ def fft(y_temp, topk=.1):
     else: 
         return x_freq, y_freq_abs
 
-mpu = ujson.load(open('recordings2.json','r'))
+mpu = ujson.load(open('C:\\Users\\cutuy\\source\\repos\\ppm\\device\\1548709262.6291513.json','r'))
 mpu = np.array(mpu)
-mpu[:,0] -= mpu[0,0]
-tf = np.arange(0, np.max(mpu[:, 0]), sample_rate)
-mpu = mpu[[np.argmin(abs(mpu[:, 0]-t)) for t in tf]]
-mpu[:, 0] = np.array(tf)
+mpu_time_col = mpu[:, -1].copy()
+mpu[:, -1] = mpu[:, 0].copy()
+mpu[:, 0] = mpu_time_col.copy()
+mpu_time_min = mpu[:,0].min()
+mpu_time_max = mpu[:,0].max()
+mpu[:, 0] -= mpu_time_min
+mpu[:, 0] = np.linspace(0, mpu_time_max - mpu_time_min, len(mpu))
 
-data = mpu[:, 0:7]
+sample_rate = (mpu_time_max - mpu_time_min)/len(mpu)
+# mpu[:,0] -= mpu[0,0]
+# tf = np.arange(0, np.max(mpu[:, 0]), sample_rate)
+# mpu = mpu[[np.argmin(abs(mpu[:, 0]-t)) for t in tf]]
+# mpu[:, 0] = np.array(tf)
+
+data = mpu[:, [0,2,3,4,5,6,7]]
 n_feature = 6
 
 ## if VIZ
@@ -71,12 +82,25 @@ n_winlen = math.floor(data.shape[0]/n_window)
 fft_freqs = np.fft.rfftfreq(n_winlen, d=sample_rate)
 fft_topk = 20
 fft_amps = np.ndarray((n_feature, n_window, len(fft_freqs))) # 2D (feature, window) array of (list of) amps
+maxima_store = []
 
 for i in range(0, n_feature):
-
-    plt.figure(str(i) + '-th spectrum')
+    print(i, " th feature stats", stats.describe(data[:, i+1]))
+    
+    maxima_idx = np.array(argrelextrema(data[:, i+1], np.greater))[0]
+    threshold  = data[:, i+1].std()/2
+    maxima_idx_filtered = [m_i for m_i in maxima_idx if data[m_i, i+1] > threshold]
+    maxima_store.append(maxima_idx_filtered)
+    print('detected ', len(maxima_idx_filtered), ' peaks')
+    # TODO use detected main freqs to reduce duplicates
+    plt.xlim(0, 10)  # max freq should be at the 2nd column
+    plt.legend(loc='upper right')
+    plt.figure(str(i) + '-th data')
+    plt.plot(data[:, 0], data[:, i+1])
+    plt.scatter(data[maxima_idx_filtered,0], data[maxima_idx_filtered,i+1])
 
     print('Feature {0}'.format(i))
+    plt.figure(str(i) + '-th spectrum')
     for j in range(0, n_window):
         x, y = fft(data[n_winlen*j:n_winlen*(j+1), i+1], topk=fft_topk)
         fft_amps[i,j,:] = y.copy()
@@ -94,15 +118,16 @@ for i in range(0, n_feature):
             # print('Main period:', 1/x[np.argmax(y)])
         # plt.legend(loc='upper left')
     # overall fft
-    plt.xlim(0, 10)  # max freq should be at the 2nd column
-    plt.legend(loc='upper right')
-    plt.figure(str(i) + '-th data')
-    plt.plot(data[:, 0], data[:, i+1])
+    
 
 # TODO: handle empty array case
-# period_pred = np.max([val for val, count in Counter([p for p,a in period_poll]).most_common(1)])
-# print('Predicted main period', period_pred)
+period_pred = np.max([val for val, count in Counter([p for p,a in period_poll]).most_common(1)])
+print('Predicted main period', period_pred)
+print(period_poll)
 
+# Use period_pred to dedup maxima_store
+for p_idx_list in maxima_store:
+    
 # TODO: {outlier detection | swing detection} by levels: window, timestamp?
 
 

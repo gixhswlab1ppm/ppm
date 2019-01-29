@@ -3,7 +3,7 @@ import time
 import struct
 import threading
 import ujson
-dev = serial.Serial('/dev/ttyACM0', 9600)# 15200
+dev = serial.Serial('/dev/ttyACM0', 9600)
 
 n_wf = 0
 n_all = 0
