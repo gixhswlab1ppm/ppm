@@ -43,11 +43,7 @@ def fft(y_temp, topk=.1):
     else: 
         return x_freq, y_freq_abs
 
-<<<<<<< HEAD:device/rt_collect_sensor_data.py
 mpu = ujson.load(open('C:\\Users\\James\\ppm2\\device\\1548719339.7204287.json','r'))
-=======
-mpu = ujson.load(open('C:\\Users\\cutuy\\source\\repos\\ppm\\device\\data3.json','r'))
->>>>>>> 905bb4366f2347bcb8fe89afc8b2061fd328a5dc:rt_collect_sensor_data.py
 mpu = np.array(mpu)
 mpu_time_col = mpu[:, -1].copy()
 mpu[:, -1] = mpu[:, 0].copy()
@@ -132,10 +128,6 @@ print(period_poll)
 # Use period_pred to dedup maxima_store
 for p_idx_list in maxima_store:
     pass
-<<<<<<< HEAD:device/rt_collect_sensor_data.py
-=======
-    
->>>>>>> 905bb4366f2347bcb8fe89afc8b2061fd328a5dc:rt_collect_sensor_data.py
 # TODO: {outlier detection | swing detection} by levels: window, timestamp?
 
 
