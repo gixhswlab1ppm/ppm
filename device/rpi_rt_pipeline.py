@@ -6,8 +6,14 @@ from sklearn.preprocessing import StandardScaler
 from collections import Counter
 from scipy import stats
 from scipy.signal import argrelextrema
+import ujson
 
 sample_rate = 0.005  # 5e-3s, 5ms
+locations = {
+7 : (0, 0),
+8 : (10, 0),
+9 : (5, 10),
+}
 
 def fft(y_temp, topk=.1):
     """
@@ -36,13 +42,99 @@ def fft(y_temp, topk=.1):
     else: 
         return x_freq, y_freq_abs
 
+def triangulate(data):
+    """takes in time-series piezometer data nested array form:
+    [[piezo1, piezo2, piezo3],...,[piezo1, piezo2, piezo3]]
+    with the assumption that piezo1 is in the top left corner
+    piezo2 is in the top right corner equidistant from the handle
+    piezo3 is near the handle"""
+    coords = [[], [], []]
+    i = 0
+    for datum in data:
+        # find r for trilateration via pythagorean theorem
+        DistA = datum[0]
+        DistB = datum[1]
+        DistC = datum[2]
+
+        # find p1, p2 (beginning coords, set in locations dict above)
+        LatA = locations[7][0]
+        LonA = locations[7][1]
+        LatB = locations[8][0]
+        LonB = locations[8][1]
+        LatC = locations[9][0]
+        LonC = locations[9][1]
+
+        # if piezometers all sense data
+        # change ands to ors if you want judgement
+        if (DistA != 0) and (DistB != 0) and (DistC != 0):
+            # find ratios of distance
+            dist_1 = DistA / (DistA + DistB)
+
+            dist_2 = DistA / (DistA + DistC)
+
+            dist_3 = DistC / (DistC + DistB)
+
+            # print(dist_1, dist_2, dist_3)
+
+            """ 
+            calculate  edges of triangle of location based on ratios
+            of distance between each node
+            """
+
+            # TODO/WARNING: Right now, this might work the wrong way! It might say that it is closer if it is louder.
+
+            loc_1x = (dist_1 * (LatB - LatA)) + LatA
+            loc_1y = (dist_1 * (LonB - LonA)) + LonA
+
+            loc_2x = (dist_2 * (LatC - LatA)) + LatA
+            loc_2y = (dist_2 * (LonC - LonA)) + LonA
+
+            loc_3x = LatB - (dist_3 * (LatB - LatC))
+            loc_3y = LatC - (dist_3 * (LonB - LonC))
+
+            # print("guess dist a/c", [loc_1x, loc_1y])
+            # print("guess dist a/b", [loc_2x, loc_2y])
+            # print("guess dist b/c", [loc_3x, loc_3y])
+
+            # average the edges to find the center of the formed triangle
+            # print("this is the estimate x location", loc_1x, loc_2x, loc_3x)
+            x = (loc_1x + loc_2x + loc_3x)/3
+            y = (loc_1y + loc_2y + loc_3y)/3
+
+            if np.isnan(x) or np.isnan(y):
+                pass
+            else:
+                coords[0].append(x)
+                coords[1].append(10-y)
+                coords[2].append(i)
+                # coords.append([x, y, i])
+
+                if (DistC < DistA):
+                    if (DistC < DistB):
+                        guess = ", Ball is between 1 and 2"
+                if (DistB < DistA):
+                    if (DistB < DistC):
+                        guess = ", Ball is between 1 and 3"
+                if (DistA < DistC):
+                    if (DistA < DistB):
+                        guess = ", Ball is between 2 and 3"
+            print("Piezometer 1: ", DistA, ", 2: ", DistB, ", 3: ", DistC, ", period: ", i, guess, sep='')
+        i += 1
+
+                # uncomment to print data and coords, change coords = [x, y]
+
+                # print("this is the estimated location")
+                # print(coords)
+                # print()
+    return coords
+
 def rt_process_file(mpu_obj):
     print("#######################################")
     swing_period = (1.5, 3)
 
     mpu = mpu_obj
     mpu = np.array(mpu)
-    mpu_time_col = mpu[:, -1].copy()
+    mpu_time_col = mpu[:, -1].copy() # [temp, IMU, piezo, time]
     mpu[:, -1] = mpu[:, 0].copy()
     mpu[:, 0] = mpu_time_col.copy()
     mpu_time_min = mpu[:,0].min()
@@ -53,7 +145,7 @@ def rt_process_file(mpu_obj):
     global sample_rate
     sample_rate = (mpu_time_max - mpu_time_min)/len(mpu)
 
-    data = mpu[:, [0,2,3,4,5,6,7]]
+    data = mpu[:, [0,1,2,3,4,5,6]]
     n_feature = 6
 
     period_poll = []
@@ -86,7 +178,18 @@ def rt_process_file(mpu_obj):
 
             if main_signal_period >= swing_period[0] and main_signal_period <= swing_period[1]:
                 period_poll.append((main_signal_period, main_signal_amp))
-
-    period_pred = np.max([val for val, count in Counter([p for p,a in period_poll]).most_common(1)])
-    print('Predicted swing period: ', period_pred)
     print('Swing period polls: ', period_poll)
+    try:
+        period_pred = np.max([val for val, count in Counter([p for p,a in period_poll]).most_common(1)])
+        print('Predicted swing period: ', period_pred)
+    finally:
+        pass
+
+    ## below is hit-pnt detection
+    print("#######################################")
+    triangulate(mpu[:, [7,8,9]])
+
+if __name__ == "__main__":
+    rt_process_file(ujson.load(open('C:\\Users\\cutuy\\source\\repos\\ppm\\device\\1548918592.5420806.json','r')))
+
+
