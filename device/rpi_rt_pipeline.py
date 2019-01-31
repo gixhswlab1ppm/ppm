@@ -159,7 +159,7 @@ def rt_process_file(mpu_obj):
 
     for i in range(0, n_feature):
         print("@@@@@@@@@@@@@@")
-        print(i, "-th feature stats", stats.describe(data[:, i+1]))
+        # print(i, "-th feature stats", stats.describe(data[:, i+1]))
         
         maxima_idx = np.array(argrelextrema(data[:, i+1], np.greater))[0]
         threshold  = data[:, i+1].std()/2

@@ -27,7 +27,8 @@ def daemon():
             print('file emitted!')
             threading.Thread(target=process_rt, args=(str(last_update_time)+'.json',)).start()
             last_update_time = time.time()
-        time.sleep(2)
+        else:
+            time.sleep(2)
 
 def rt_process(entry):
     global last_update_time
