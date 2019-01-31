@@ -43,7 +43,7 @@ def fft(y_temp, topk=.1):
     else: 
         return x_freq, y_freq_abs
 
-mpu = ujson.load(open('C:\\Users\\cutuy\\source\\repos\\ppm\\device\\1548709262.6291513.json','r'))
+mpu = ujson.load(open('C:\\Users\\cutuy\\source\\repos\\ppm\\device\\data3.json','r'))
 mpu = np.array(mpu)
 mpu_time_col = mpu[:, -1].copy()
 mpu[:, -1] = mpu[:, 0].copy()
@@ -127,6 +127,7 @@ print(period_poll)
 
 # Use period_pred to dedup maxima_store
 for p_idx_list in maxima_store:
+    pass
     
 # TODO: {outlier detection | swing detection} by levels: window, timestamp?
 
