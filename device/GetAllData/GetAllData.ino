@@ -8,7 +8,6 @@ long timer = 0;
 
 
 void setup() {
-  pinMode(13, OUTPUT);
   pinMode(7, INPUT);
   Serial.begin(9600);
   Wire.begin();
@@ -30,7 +29,7 @@ void loop() {
   p.a0 = analogRead(A0);
   p.a1 = analogRead(A1);
   p.a2 = analogRead(A2);
-
+  
   Serial.write((byte*)&p, sizeof(p));
   Serial.print('@');
   Serial.flush();
