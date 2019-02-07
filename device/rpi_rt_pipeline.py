@@ -127,7 +127,13 @@ def triangulate(data):
                 # print(coords)
                 # print()
     return coords
-
+def triangulate_centroid(readings, circles=[[-1,0], [1,0], [0, -math.sqrt(3)]]):
+	"""
+	Given a 1x3 array of readings, and 3x2 array of circles
+	Returns the weighted centroid (1x2)
+	"""
+	return np.divide(np.dot(readings, circles), .0001 + np.sum(circles, axis=0))
+	
 def rt_process_file(mpu_obj):
     print("#######################################")
     swing_period = (1.5, 3)
