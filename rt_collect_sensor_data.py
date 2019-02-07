@@ -43,7 +43,7 @@ def fft(y_temp, topk=.1):
     else: 
         return x_freq, y_freq_abs
 
-mpu = ujson.load(open('C:\\Users\\James\\ppm2\\device\\1548719339.7204287.json','r'))
+mpu = ujson.load(open('C:\\Users\\cutuy\\source\\repos\\ppm\\device\\1548709262.6291513.json','r'))
 mpu = np.array(mpu)
 mpu_time_col = mpu[:, -1].copy()
 mpu[:, -1] = mpu[:, 0].copy()
@@ -121,8 +121,8 @@ for i in range(0, n_feature):
     
 
 # TODO: handle empty array case
-period_pred = np.max([val for val, count in Counter([p for p,a in period_poll]).most_common(1)])
-print('Predicted main period', period_pred)
+# period_pred = np.max([val for val, count in Counter([p for p,a in period_poll]).most_common(1)])
+# print('Predicted main period', period_pred)
 print(period_poll)
 
 # Use period_pred to dedup maxima_store

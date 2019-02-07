@@ -179,15 +179,16 @@ def rt_process_file(mpu_obj):
             if main_signal_period >= swing_period[0] and main_signal_period <= swing_period[1]:
                 period_poll.append((main_signal_period, main_signal_amp))
     print('Swing period polls: ', period_poll)
+    ## below is hit-pnt detection
+    print("#######################################")
+    triangulate(mpu[:, [7,8,9]])
     try:
         period_pred = np.max([val for val, count in Counter([p for p,a in period_poll]).most_common(1)])
         print('Predicted swing period: ', period_pred)
     finally:
         pass
 
-    ## below is hit-pnt detection
-    print("#######################################")
-    triangulate(mpu[:, [7,8,9]])
+
 
 if __name__ == "__main__":
     rt_process_file(ujson.load(open('C:\\Users\\cutuy\\source\\repos\\ppm\\device\\1548918592.5420806.json','r')))
