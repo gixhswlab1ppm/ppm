@@ -3,60 +3,83 @@ import time
 import struct
 import threading
 import ujson
-import rpi_rt_pipeline
-dev = serial.Serial('/dev/ttyUSB0', 9600)# 15200
+import collections
+import numpy as np
+import math
+import os
+import circular_buffer
+from algorithm import swing_count_svc, hit_detection_svc
 
-n_wf = 0
-n_all = 0
-entry_list = []
-last_update_time = time.time()
+# global settings
+dev = serial.Serial('/dev/ttyUSB0', 9600)  # 15200
+packet_dt = np.dtype([
+    ('ts', np.uint32),
+    ('accx', np.float32),
+    ('accy', np.float32),
+    ('accz', np.float32),
+    ('gyrox', np.float32),
+    ('gyroy', np.float32),
+    ('gyroz', np.float32),
+    ('a0', np.int16),
+    ('a1', np.int16),
+    ('a2', np.int16)])  # must be wrapped as a tuple
+packet_fmt = '<Lffffffhhh'
+proc_buff_size = 1 << 10 # approx >20sec
+packet_ver = 1
+n_readers = 2
 
-#print(ser.in_waiting)
+# assumption must hold true: data arrives *continuously*
+proc_buf = circular_buffer.circular_buffer(1 << 9, n_readers, packet_dt)
 
-def process_rt(file_name):
-    sensor_data = ujson.load(open(file_name,'r'))
-    rpi_rt_pipeline.rt_process_file(sensor_data)
+# TODO adaptive sleep policy (upon None | hasData)
 
 
-def daemon():
-    global last_update_time
+def swing_counter():
+    time.sleep(5)
     while True:
-        print(time.time() - last_update_time)
-        if time.time() - last_update_time > 3:
-            ujson.dump(entry_list, open(str(last_update_time)+'.json', 'w'))
-            print('file emitted!')
-            threading.Thread(target=process_rt, args=(str(last_update_time)+'.json',)).start()
-            last_update_time = time.time()
-        else:
-            time.sleep(2)
-
-def rt_process(entry):
-    global last_update_time
-    last_update_time = time.time()
-    # print(entry)
-    entry = [e for e in entry]
-    entry.append(last_update_time)
-    entry_list.append(entry)
+        # based on observation of 15 packet/sec
+        chunk = proc_buf.try_read(0, 150)
+        if chunk == None:
+            time.sleep(.5)  # long sleep until data ready
+            continue
+        result = swing_count_svc(chunk, 0, [1, 2, 3, 4, 5, 6])
+        # TODO display result
 
 
-threading.Thread(target=daemon).start()
+def hit_detector():
+    time.sleep(5)
+    while True:
+        chunk = proc_buf.try_read(1, 15)  # approx. per sec
+        if chunk == None:
+            time.sleep(.1)
+            continue
+        result = hit_detection_svc(chunk, 0, [7, 8, 9])
+
+
+# def lt_precise_insights(file_name):
+#     # load all data since program start
+#     sensor_data = ujson.load(open(file_name, 'r'))
+#     rpi_rt_pipeline.rt_process_file(sensor_data)
+
+
+threading.Thread(target=swing_counter).start()
+threading.Thread(target=hit_detector).start()
+
 
 while True:
-    dev.read_until('!'.encode())
-    res = dev.read_until('@'.encode())
-    n_all += 1
-    if not len(res) == 39:  # 38+1
+    packet = None
+    if packet_ver < 1:
+        dev.read_until('!'.encode())
+        res = dev.read_until('@'.encode())
+        if not len(res) == (1 + packet_dt.itemsize):
+            continue
+        packet = tuple(struct.unpack_from(packet_fmt, res))
+    else:
+        res = dev.read_until()
+        packet = tuple(ujson.decode(res))
+
+    # data validation (no guarantee even if passed)
+    if not len(packet) == len(packet_dt):
         continue
-    n_wf += 1
-    rt_process(struct.unpack_from('<Lfffffffhhh', res))
 
-    # TODO: handle the added `ts` column at location 0
-    
-    n_wf += 1
-    # print(time.time(), data)
-    #ser.write(bytes([1]))
-    # ser.flush()
-    #time.sleep(0.5)
-
-
-
+    proc_buf.write_one(packet)

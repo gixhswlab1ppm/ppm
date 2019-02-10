@@ -17,7 +17,6 @@
 typedef struct _packet
 {
 	long ts;
-	float temp;
 	float accx;
 	float accy;
 	float accz;
@@ -83,7 +82,6 @@ class MPU6050
 
 	void getPacket(packet *p)
 	{
-		p->temp = temp;
 		p->accx = accX;
 		p->accy = accY;
 		p->accz = accZ;
