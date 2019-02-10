@@ -7,6 +7,8 @@ from collections import Counter
 from scipy import stats
 from scipy.signal import argrelextrema
 import ujson
+import os 
+dir_path = os.path.dirname(os.path.realpath(__file__))
 
 sample_rate = 0.005  # 5e-3s, 5ms
 locations = {
@@ -14,6 +16,10 @@ locations = {
 8 : (10, 0),
 9 : (5, 10),
 }
+visualize = True
+
+if visualize == True:
+    import matplotlib.pyplot as plt
 
 def fft(y_temp, topk=.1):
     """
@@ -25,7 +31,7 @@ def fft(y_temp, topk=.1):
     y_temp: feature vector in time domain
     topk: \in (0,1) | [1, len(y_temp)]; returns the top frequencies & amplitudes by top percentage or count
     """
-    y_temp -= np.mean(y_temp)
+    # y_temp -= np.mean(y_temp)
     y_freq = np.fft.rfft(y_temp)
     y_freq_abs = np.abs(y_freq)
     x_freq = np.fft.rfftfreq(len(y_temp), d=sample_rate)
@@ -133,7 +139,36 @@ def triangulate_centroid(readings, circles=[[-1,0], [1,0], [0, -math.sqrt(3)]]):
 	Returns the weighted centroid (1x2)
 	"""
 	return np.divide(np.dot(readings, circles), .0001 + np.sum(circles, axis=0))
-	
+
+def clustering_dedup(maximas): # maximas: timestamps
+    # merge within window until no change
+    # 2-level clustering (dedup then detect, respectively)
+    idx_min = maximas.min()
+    idx_max = maximas.max()
+    import math
+    seg_span = 1.7 # 1 sec per window
+
+    segs = np.array(maximas).reshape(-1,1)
+    print(len(segs))
+    while True:
+        curr_seg_idx = 0
+        epoch_updated = False
+        while curr_seg_idx < len(segs) - 1:
+            curr_seg = segs[curr_seg_idx]
+            next_seg = segs[curr_seg_idx+1]
+            curr_mean = np.mean(curr_seg)
+            next_mean = np.mean(next_seg)
+            if next_mean - curr_mean < seg_span:
+                segs = [*segs[:curr_seg_idx], [*curr_seg, *next_seg], *segs[curr_seg_idx+2:]]
+                epoch_updated = True
+            curr_seg_idx += 1
+        print(len(segs))
+        if epoch_updated == False:
+            break
+    print("!!!")
+    return segs
+
+
 def rt_process_file(mpu_obj):
     print("#######################################")
     swing_period = (1.5, 3)
@@ -151,8 +186,11 @@ def rt_process_file(mpu_obj):
     global sample_rate
     sample_rate = (mpu_time_max - mpu_time_min)/len(mpu)
 
-    data = mpu[:, [0,1,2,3,4,5,6]]
-    n_feature = 6
+    feature_cols = [1,2,3,4,5,6]
+    n_feature = len(feature_cols)
+    data = mpu[:, [0, *feature_cols]]
+    for fc in feature_cols:
+        data[:, fc] -= np.mean(data[:, fc])
 
     period_poll = []
     t_window = 10
@@ -161,17 +199,23 @@ def rt_process_file(mpu_obj):
     fft_freqs = np.fft.rfftfreq(n_winlen, d=sample_rate)
     fft_topk = 20
     fft_amps = np.ndarray((n_feature, n_window, len(fft_freqs))) # 2D (feature, window) array of (list of) amps
-    maxima_store = []
 
     for i in range(0, n_feature):
         print("@@@@@@@@@@@@@@")
-        # print(i, "-th feature stats", stats.describe(data[:, i+1]))
+        print(i, "-th feature stats", stats.describe(data[:, i+1]))
         
         maxima_idx = np.array(argrelextrema(data[:, i+1], np.greater))[0]
-        threshold  = data[:, i+1].std()/2
+        threshold  = data[:, i+1].std()*0.8
         maxima_idx_filtered = [m_i for m_i in maxima_idx if data[m_i, i+1] > threshold]
-        maxima_store.append(maxima_idx_filtered)
+        ts_dedup = clustering_dedup(data[maxima_idx_filtered,0])
         print(i, "-th feature ", 'detected ', len(maxima_idx_filtered), ' peaks')
+
+        if visualize == True:
+            # plt.figure(str(i) + '-th data')
+            plt.scatter(data[maxima_idx_filtered,0], [1-0.1*i]*len(maxima_idx_filtered), s=10*data[maxima_idx_filtered,i+1]/threshold)
+            plt.scatter([np.mean(seg) for seg in ts_dedup], [1.5+0.05*i]*len(ts_dedup), s=[10*len(seg)for seg in ts_dedup], alpha=.5)
+            if i==2 :
+                plt.plot(data[:, 0], data[:, i+1])
 
         for j in range(0, n_window):
             x, y = fft(data[n_winlen*j:n_winlen*(j+1), i+1], topk=fft_topk)
@@ -184,19 +228,24 @@ def rt_process_file(mpu_obj):
 
             if main_signal_period >= swing_period[0] and main_signal_period <= swing_period[1]:
                 period_poll.append((main_signal_period, main_signal_amp))
+
     print('Swing period polls: ', period_poll)
     ## below is hit-pnt detection
     print("#######################################")
-    triangulate(mpu[:, [7,8,9]])
+    # triangulate(mpu[:, [7,8,9]])
     try:
         period_pred = np.max([val for val, count in Counter([p for p,a in period_poll]).most_common(1)])
         print('Predicted swing period: ', period_pred)
+    except:
+        pass
     finally:
         pass
 
 
 
 if __name__ == "__main__":
-    rt_process_file(ujson.load(open('C:\\Users\\cutuy\\source\\repos\\ppm\\device\\1548918592.5420806.json','r')))
+    rt_process_file(ujson.load(open(dir_path+'/1548709262.6291513.json','r')))
+    if visualize == True:
+        plt.show()
 
 

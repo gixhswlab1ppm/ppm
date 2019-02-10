@@ -13,6 +13,8 @@ from collections import Counter
 import ujson
 from scipy import stats
 from scipy.signal import argrelextrema
+import os 
+dir_path = os.path.dirname(os.path.realpath(__file__))
 
 swing_period = (1.5, 3)
 
@@ -43,7 +45,7 @@ def fft(y_temp, topk=.1):
     else: 
         return x_freq, y_freq_abs
 
-mpu = ujson.load(open('C:\\Users\\cutuy\\source\\repos\\ppm\\device\\1548709262.6291513.json','r'))
+mpu = ujson.load(open(dir_path + '/device/1548709262.6291513.json','r'))
 mpu = np.array(mpu)
 mpu_time_col = mpu[:, -1].copy()
 mpu[:, -1] = mpu[:, 0].copy()
@@ -88,7 +90,7 @@ for i in range(0, n_feature):
     print(i, " th feature stats", stats.describe(data[:, i+1]))
     
     maxima_idx = np.array(argrelextrema(data[:, i+1], np.greater))[0]
-    threshold  = data[:, i+1].std()/2
+    threshold  = data[:, i+1].std()
     maxima_idx_filtered = [m_i for m_i in maxima_idx if data[m_i, i+1] > threshold]
     maxima_store.append(maxima_idx_filtered)
     print('detected ', len(maxima_idx_filtered), ' peaks')

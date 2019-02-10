@@ -26,6 +26,7 @@ void loop() {
   mpu6050.update();
   packet p;
   mpu6050.getPacket(&p);
+  p.ts = millis();
   p.a0 = analogRead(A0);
   p.a1 = analogRead(A1);
   p.a2 = analogRead(A2);

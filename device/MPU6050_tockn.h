@@ -16,6 +16,7 @@
 
 typedef struct _packet
 {
+	long ts;
 	float temp;
 	float accx;
 	float accy;

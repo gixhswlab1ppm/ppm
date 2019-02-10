@@ -45,10 +45,13 @@ while True:
     dev.read_until('!'.encode())
     res = dev.read_until('@'.encode())
     n_all += 1
-    if not len(res) == 35:  # 34+1
+    if not len(res) == 39:  # 38+1
         continue
     n_wf += 1
-    rt_process(struct.unpack_from('<fffffffhhh', res))
+    rt_process(struct.unpack_from('<Lfffffffhhh', res))
+
+    # TODO: handle the added `ts` column at location 0
+    
     n_wf += 1
     # print(time.time(), data)
     #ser.write(bytes([1]))
