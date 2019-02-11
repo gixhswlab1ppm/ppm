@@ -8,7 +8,7 @@ import numpy as np
 import math
 import os
 import circular_buffer
-from algorithm import swing_count_svc, hit_detection_svc
+from algorithm import swing_count_svc, hit_detection_svc, fft_svc
 
 # global settings
 dev = serial.Serial('/dev/ttyUSB0', 9600)  # 15200
@@ -24,12 +24,12 @@ packet_dt = np.dtype([
     ('a1', np.int16),
     ('a2', np.int16)])  # must be wrapped as a tuple
 packet_fmt = '<Lffffffhhh'
-proc_buff_size = 1 << 10 # approx >20sec
+proc_buff_size = 1 << 11  # 50 dp/sec -> 40 sec
 packet_ver = 1
-n_readers = 2
+n_readers = 3
 
 # assumption must hold true: data arrives *continuously*
-proc_buf = circular_buffer.circular_buffer(1 << 9, n_readers, packet_dt)
+proc_buf = circular_buffer.circular_buffer(proc_buff_size, n_readers, packet_dt)
 
 # TODO adaptive sleep policy (upon None | hasData)
 
@@ -54,6 +54,16 @@ def hit_detector():
             time.sleep(.1)
             continue
         result = hit_detection_svc(chunk, 0, [7, 8, 9])
+
+
+def fft_near_realtime():
+    time.sleep(5)
+    while True:
+        chunk = proc_buf.try_read(2, 1 << 9)  # ~10sec
+        if chunk == None:
+            time.sleep(5)
+            continue
+        result = fft_svc(chunk, 0, [1, 2, 3, 4, 5, 6], win_len=0)
 
 
 # def lt_precise_insights(file_name):
