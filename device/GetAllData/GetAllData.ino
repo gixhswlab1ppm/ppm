@@ -14,18 +14,18 @@ void setup() {
   mpu6050.calcGyroOffsets(false);
 }
 
-void transmit(packet &p){
-  Serial.print('[')
-  Serial.print(p.ts); Serial.print(',');
-  Serial.print(p.accx); Serial.print(',');
-  Serial.print(p.accy); Serial.print(',');
-  Serial.print(p.accz; Serial.print(',');
-  Serial.print(p.gyrox); Serial.print(',');
-  Serial.print(p.gyroy); Serial.print(',');
-  Serial.print(p.gyroz); Serial.print(',');
-  Serial.print(p.a0); Serial.print(',');
-  Serial.print(p.a1); Serial.print(',');
-  Serial.print(p.a2); Serial.println(']');
+void transmit(packet *p){
+  Serial.print('[');
+  Serial.print(p->ts); Serial.print(',');
+  Serial.print(p->accx, 8); Serial.print(',');
+  Serial.print(p->accy, 8); Serial.print(',');
+  Serial.print(p->accz, 8); Serial.print(',');
+  Serial.print(p->gyrox, 8); Serial.print(',');
+  Serial.print(p->gyroy, 8); Serial.print(',');
+  Serial.print(p->gyroz, 8); Serial.print(',');
+  Serial.print(p->a0); Serial.print(',');
+  Serial.print(p->a1); Serial.print(',');
+  Serial.print(p->a2); Serial.println(']');
 }
 
 void loop() {
@@ -45,7 +45,6 @@ void loop() {
   p.a2 = analogRead(A2);
   // Serial.write((byte*)&p, sizeof(p));
   // Serial.print('@');
-  transmit(p);
+  transmit(&p);
   Serial.flush();
 }
-

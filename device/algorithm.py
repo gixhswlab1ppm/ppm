@@ -26,7 +26,7 @@ def triangulate_centroid(readings, circles=[[-1, 0], [1, 0], [0, -math.sqrt(3)]]
 
 def shift_mean(data, ts_col, feature_cols):
     return np.hstack([
-        data[:, ts_col],
+        data[:, [ts_col]],
         data[:, feature_cols] - np.mean(data[:, feature_cols], axis=0)
     ])
 
@@ -49,8 +49,8 @@ def swing_count_svc(data, ts_col, feature_cols):
             while curr_seg_idx < len(segs) - 1:
                 curr_seg = segs[curr_seg_idx]
                 next_seg = segs[curr_seg_idx+1]
-                curr_mean = np.mean(data[curr_seg, 0])
-                next_mean = np.mean(data[next_seg, 0])
+                curr_mean = np.mean(curr_seg)
+                next_mean = np.mean(next_seg)
                 if next_mean - curr_mean < seg_span:
                     segs = [*segs[:curr_seg_idx],
                             [*curr_seg, *next_seg], *segs[curr_seg_idx+2:]]
@@ -64,27 +64,30 @@ def swing_count_svc(data, ts_col, feature_cols):
             print("!!!")
         return segs
 
-    data = shift_mean(data, ts_col, feature_cols).copy()
+    data = shift_mean(data, ts_col, feature_cols)
     polls = []
     for i in range(0, len(feature_cols)):
         maxima_idx = np.array(argrelextrema(data[:, i+1], np.greater))[0]
         threshold = data[:, i+1].std()*0.8
         maxima_idx_filtered = [
             m_i for m_i in maxima_idx if data[m_i, i+1] > threshold]
-        ts_dedup = clustering_dedup(data[maxima_idx_filtered, 0])
-        polls.append(len(ts_dedup))  # silly polling for now
-    return math.trunc(np.average(polls))
+        if len(maxima_idx_filtered) > 0:
+            ts_dedup = clustering_dedup(data[maxima_idx_filtered, 0])
+            polls.append(len(ts_dedup))  # silly polling for now
+            return math.trunc(np.average(polls))
+        else:
+            return 0
 
 
 def hit_detection_svc(data, ts_col, feature_cols):
-    data = data[:, [ts_col, *feature_cols]].copy()
+    data = data[:, [ts_col, *feature_cols]]
     result = np.empty((len(data), 2), dtype=float)
     for i, entry in enumerate(data):
         if np.sum(entry[1:]) > 0:
             result[i] = triangulate_centroid(entry[1:])
         else:
             result[i] = [0, 0]
-    return np.hstack([data[:, 0], result])
+    return np.hstack([data[:, [0]], result])
 
 
 def fft_svc(data, ts_col, feature_cols, win_len=10): # win_len=0 for unwindowed fft, unit: sec
@@ -118,7 +121,7 @@ def fft_svc(data, ts_col, feature_cols, win_len=10): # win_len=0 for unwindowed 
     # swing_period = (1.5, 3)
 
     # must treat timestamps as evenly distributed
-    data = shift_mean(data, ts_col, feature_cols).copy()
+    data = shift_mean(data, ts_col, feature_cols)
     ts_col = data[:, 0].copy()
     mpu_time_min = data[:, 0].min()
     mpu_time_max = data[:, 0].max()
@@ -165,6 +168,8 @@ def fft_svc(data, ts_col, feature_cols, win_len=10): # win_len=0 for unwindowed 
                             i, alpha=.5, s=100*y/max(y))
 
             swing_frequency[i, j] = 1/x[np.argmax(y)]
+    if visualize:
+        plt.show()
     
     if win_len > 0:
         return fft_result, swing_frequency

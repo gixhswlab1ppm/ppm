@@ -11,7 +11,9 @@ import circular_buffer
 from algorithm import swing_count_svc, hit_detection_svc, fft_svc
 from gpiozero import Button
 
-
+debug = True
+if debug:
+    print('import complete')
 
 # global settings
 button = Button(7)
@@ -46,10 +48,12 @@ def swing_counter():
     while True:
         # based on observation of 15 packet/sec
         chunk = proc_buf.try_read(0, 150)
-        if chunk == None:
+        if chunk is None:
             time.sleep(.5 if not is_alive else 5)  # long sleep until data ready
             continue
-        result = swing_count_svc(chunk, 0, [1, 2, 3, 4, 5, 6])
+        result = swing_count_svc(np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)), 0, [1, 2, 3, 4, 5, 6])
+        if debug:
+            print('swing counter result available')
         # TODO display result
 
 
@@ -57,20 +61,24 @@ def hit_detector():
     time.sleep(5)
     while True:
         chunk = proc_buf.try_read(1, 15)  # approx. per sec
-        if chunk == None:
+        if chunk is None:
             time.sleep(.1 if not is_alive else 5)
             continue
-        result = hit_detection_svc(chunk, 0, [7, 8, 9])
+        result = hit_detection_svc(np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)), 0, [7, 8, 9])
+        if debug:
+            print('hit detector result available')
 
 
 def fft_near_realtime():
     time.sleep(5)
     while True:
         chunk = proc_buf.try_read(2, 1 << 9)  # ~10sec
-        if chunk == None:
+        if chunk is None:
             time.sleep(5 if not is_alive else 5)
             continue
-        result = fft_svc(chunk, 0, [1, 2, 3, 4, 5, 6], win_len=0)
+        result = fft_svc(np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)), 0, [1, 2, 3, 4, 5, 6], win_len=0)
+        if debug:
+            print('fft_nrt result available')
 
 
 
@@ -80,7 +88,6 @@ def fft_near_realtime():
 #     rpi_rt_pipeline.rt_process_file(sensor_data)
 
 def user_input_handler(): # when not alive, worker thread will still run till data processed
-    global is_alive
     worker_threads = [
         threading.Thread(target=swing_counter),
         threading.Thread(target=hit_detector),
@@ -88,14 +95,23 @@ def user_input_handler(): # when not alive, worker thread will still run till da
     ]
     for th in worker_threads:
         th.start()
+    if debug:
+        print('worker threads started')
     def end():
+        if debug:
+            print('activity ends')
+        global is_alive
         is_alive = False
         button.when_pressed = start
     def start():
+        if debug:
+            print('activity starts')
+        global is_alive
         is_alive = True
-        button.when_released = end
-    if button.is_pressed:
-        button.wait_for_release()
+        button.when_pressed = end
+    if debug:
+        print('boot seq complete')
+    print('waiting for start')
     button.when_pressed = start
 
 
@@ -104,7 +120,10 @@ threading.Thread(target=user_input_handler).start()
 
 while True:
     if not is_alive:
+        if debug:
+            print('sleeping for 2 sec')
         time.sleep(2)
+        continue
 
     packet = None
     if packet_ver < 1:
@@ -114,11 +133,16 @@ while True:
             continue
         packet = tuple(struct.unpack_from(packet_fmt, res))
     else:
-        res = dev.read_until()
-        packet = tuple(ujson.decode(res))
+        # print('reading sensor data')
+        res = str(dev.read_until())
+        res = res[res.find('['):res.find(']')+1]
+        res = ujson.decode(res)
+        packet = tuple(res)
 
     # data validation (no guarantee even if passed)
     if not len(packet) == len(packet_dt):
         continue
 
     proc_buf.write_one(packet)
+
+    

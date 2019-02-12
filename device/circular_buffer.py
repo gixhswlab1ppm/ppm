@@ -4,6 +4,7 @@ import time
 import math
 import ujson
 
+debug = True
 
 class circular_buffer():
     '''
@@ -18,6 +19,7 @@ class circular_buffer():
     def __init__(self, max_len, n_readers, dtype):  # list of window
         self._lock = threading.Lock()
         self._maxlen = max_len
+        self._dtype = dtype
         self._buf = np.empty((self._maxlen, ), dtype=dtype)
         self._valid = False*np.ones((n_readers, self._maxlen, ), dtype=bool)
         # pos to read; no check for writers
@@ -35,17 +37,20 @@ class circular_buffer():
             if self._writer == 0:  # reached 1 epoch, now dumping to file; synchronous for now
                 file_name = str(self._ts) + "_" + str(self._epoch) + ".json"
                 ujson.dump(np.flip(self._buf, axis=0), open(file_name, 'w'))
-                print('file dumped @ epoch {0}'.format(self._epoch))
+                if debug:
+                    print('file dumped @ epoch {0}'.format(self._epoch))
                 self._epoch += 1
             self._writer = (self._writer - 1) % self._maxlen
 
     def write_iterable(self, iterable):  # only 1 thread allowed to write
-        print('before write_iterable: {0} {1} {2}'.format(
-            self._writer, self._readers, self._buf))
+        if debug:
+            print('before write_iterable: {0} {1} {2}'.format(
+                self._writer, self._readers, self._buf))
         for d in iterable:
             self.write_one(d)  # TODO perf improvement
-        print('after write_iterable: {0} {1} {2}'.format(
-            self._writer, self._readers, self._buf))
+        if debug:
+            print('after write_iterable: {0} {1} {2}'.format(
+                self._writer, self._readers, self._buf))
 
     # will return None if existing content not bigger than window
     # data "invisible" for current reader upon successful read
@@ -53,12 +58,14 @@ class circular_buffer():
         with self._lock:
             if reader_idx >= len(self._readers) or window > self._maxlen:
                 raise Exception()
+            if debug:
+                print('valid item count for read {0} is {1}'.format(reader_idx, np.sum(self._valid[reader_idx, :])))
             reader = self._readers[reader_idx]
             window_ori = window
             result = np.empty(0, dtype=self._buf.dtype)
             if reader + 1 < window:
                 if not np.alltrue(self._valid[reader_idx, :reader+1]) or not np.alltrue(self._valid[reader_idx, -(window-reader-1):]):
-                    print('None')
+                    # print('None')
                     return None
                 self._valid[reader_idx, :reader+1] = False
                 self._valid[reader_idx, -(window-reader-1):] = False
@@ -66,17 +73,18 @@ class circular_buffer():
                     [result, self._buf[:reader+1][::-1], self._buf[-(window-reader-1):][::-1]])
             else:
                 if not np.alltrue(self._valid[reader_idx, reader-window+1:reader+1]):
-                    print('None')
+                    # print('None')
                     return None
                 self._valid[reader_idx, reader-window+1:reader+1] = False
                 result = np.hstack(
                     [result, self._buf[reader-window+1:reader+1][::-1]])
             if len(result) == 0:
-                print('None')
+                # print('None')
                 return None
             self._readers[reader_idx] = (reader - window_ori) % self._maxlen
-            print('reader {0} result {1}'.format(reader_idx, result))
-            return result
+            # if debug:
+            #     print('reader {0} result {1}'.format(reader_idx, result))
+            return np.array(result)
 
     def get_len(self, reader_idx):
         return np.sum(self._valid[reader_idx])
