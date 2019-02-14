@@ -38,7 +38,7 @@ def swing_count_svc(data, ts_col, feature_cols):
         idx_min = maximas.min()
         idx_max = maximas.max()
 
-        seg_span = 1700  # millisecond
+        seg_span = 1.700  # millisecond # TODO change to millisec if using new ts type!
 
         segs = np.array(maximas).reshape(-1, 1)
         if debug == True:
@@ -74,9 +74,9 @@ def swing_count_svc(data, ts_col, feature_cols):
         if len(maxima_idx_filtered) > 0:
             ts_dedup = clustering_dedup(data[maxima_idx_filtered, 0])
             polls.append(len(ts_dedup))  # silly polling for now
-            return math.trunc(np.average(polls))
+            yield math.trunc(np.average(polls))
         else:
-            return 0
+            yield 0
 
 
 def hit_detection_svc(data, ts_col, feature_cols):
@@ -87,7 +87,7 @@ def hit_detection_svc(data, ts_col, feature_cols):
             result[i] = triangulate_centroid(entry[1:])
         else:
             result[i] = [0, 0]
-    return np.hstack([data[:, [0]], result])
+    return np.hstack([data[:, [0]], result]).reshape(-1,3)
 
 
 def fft_svc(data, ts_col, feature_cols, win_len=10): # win_len=0 for unwindowed fft, unit: sec
@@ -175,3 +175,28 @@ def fft_svc(data, ts_col, feature_cols, win_len=10): # win_len=0 for unwindowed 
         return fft_result, swing_frequency
     else:
         return fft_result[:, 0, :], swing_frequency[:, 0]
+
+if __name__ == "__main__":
+    import os 
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    file_path = dir_path + '\\1548709262.6291513.json'
+    data = np.array(ujson.load(open(file_path,'r')))
+    ts_col = 10
+    mpu_cols = [1,2,3,4,5,6]
+    hit_cols = [7,8,9]
+
+    swing_result = list(swing_count_svc(data, ts_col, mpu_cols))
+    print(swing_result)
+
+    hit_result = hit_detection_svc(data, ts_col, hit_cols)
+    indices = np.argwhere(np.dot(hit_result, [[0],[1],[1]])>0)
+    import matplotlib.pyplot as plt
+    plt.scatter(hit_result[indices[:,0], 1], hit_result[indices[:,0], 2], alpha=.5)
+    plt.plot([-1, 1, 0,-1], [0, 0, -math.sqrt(3),0])
+    plt.show()
+    # print(hit_result)
+
+    fft_result, swing_freq = list(fft_svc(data, ts_col, mpu_cols))
+    print(swing_freq)
+
+    pass
