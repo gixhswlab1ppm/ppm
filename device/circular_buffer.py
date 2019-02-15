@@ -2,7 +2,7 @@ import numpy as np
 import threading
 import time
 import math
-import ujson
+import json
 
 debug = True
 
@@ -16,11 +16,11 @@ class circular_buffer():
     - Per-epoch dumping
     - Custom datatype
     '''
-    def __init__(self, max_len, n_readers, dtype):  # list of window
+    def __init__(self, max_len, n_readers, dtype): 
         self._lock = threading.Lock()
         self._maxlen = max_len
-        self._dtype = dtype
         self._buf = np.empty((self._maxlen, ), dtype=dtype)
+        self._dtype_has_fields = self._buf.dtype.fields is None
         self._valid = False*np.ones((n_readers, self._maxlen, ), dtype=bool)
         # pos to read; no check for writers
         self._readers = [self._maxlen-1]*n_readers
@@ -36,7 +36,7 @@ class circular_buffer():
             self._valid[:, self._writer] = True
             if self._writer == 0:  # reached 1 epoch, now dumping to file; synchronous for now
                 file_name = str(self._ts) + "_" + str(self._epoch) + ".json"
-                ujson.dump(np.flip(self._buf, axis=0), open(file_name, 'w'))
+                json.dump(np.flip(self._buf, axis=0).tolist(), open(file_name, 'w')) # only supports serializable dtype or serializable fields of dtype
                 if debug:
                     print('file dumped @ epoch {0}'.format(self._epoch))
                 self._epoch += 1
