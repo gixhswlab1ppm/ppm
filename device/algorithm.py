@@ -9,7 +9,7 @@ import os
 import math
 dir_path = os.path.dirname(os.path.realpath(__file__))
 
-visualize = True
+visualize = False
 debug = False
 
 if visualize == True:
@@ -38,7 +38,7 @@ def swing_count_svc(data, ts_col, feature_cols):
         idx_min = maximas.min()
         idx_max = maximas.max()
 
-        seg_span = 1.700  # millisecond # TODO change to millisec if using new ts type!
+        seg_span = 1500  # millisecond # TODO change to millisec if using new ts type!
 
         segs = np.array(maximas).reshape(-1, 1)
         if debug == True:
@@ -68,12 +68,19 @@ def swing_count_svc(data, ts_col, feature_cols):
     polls = []
     for i in range(0, len(feature_cols)):
         maxima_idx = np.array(argrelextrema(data[:, i+1], np.greater))[0]
-        threshold = data[:, i+1].std()*0.8
+        threshold = data[:, i+1].std()*0.6
         maxima_idx_filtered = [
             m_i for m_i in maxima_idx if data[m_i, i+1] > threshold]
         if len(maxima_idx_filtered) > 0:
             ts_dedup = clustering_dedup(data[maxima_idx_filtered, 0])
             polls.append(len(ts_dedup))  # silly polling for now
+            if visualize:
+                plt.scatter(data[maxima_idx_filtered, 0],
+                            data[maxima_idx_filtered, i+1], s=20, alpha=.5)
+                plt.scatter([np.mean(tsd) for tsd in ts_dedup], data[:,
+                                                                     i+1].std() * np.ones(len(ts_dedup)), s=40, alpha=.5)
+                plt.plot(data[:, 0], data[:, i+1])
+                plt.show()
             yield math.trunc(np.average(polls))
         else:
             yield 0
@@ -87,10 +94,11 @@ def hit_detection_svc(data, ts_col, feature_cols):
             result[i] = triangulate_centroid(entry[1:])
         else:
             result[i] = [0, 0]
-    return np.hstack([data[:, [0]], result]).reshape(-1,3)
+    return np.hstack([data[:, [0]], result]).reshape(-1, 3)
 
 
-def fft_svc(data, ts_col, feature_cols, win_len=10): # win_len=0 for unwindowed fft, unit: sec
+# win_len=0 for unwindowed fft, unit: millisec
+def fft_svc(data, ts_col, feature_cols, win_len=10000):
     def fft(y_temp, topk=.1, sample_rate=0.005):  # 5e-3s, 5ms):
         """
         Given a feature vector (1-D) sorted in time domain, this function performs a Fast DFT (real part only) and returns:
@@ -121,6 +129,7 @@ def fft_svc(data, ts_col, feature_cols, win_len=10): # win_len=0 for unwindowed 
     # swing_period = (1.5, 3)
 
     # must treat timestamps as evenly distributed
+    # aka. actual value of ts is ignored!
     data = shift_mean(data, ts_col, feature_cols)
     ts_col = data[:, 0].copy()
     mpu_time_min = data[:, 0].min()
@@ -128,7 +137,7 @@ def fft_svc(data, ts_col, feature_cols, win_len=10): # win_len=0 for unwindowed 
     data[:, 0] -= mpu_time_min
     data[:, 0] = np.linspace(0, mpu_time_max - mpu_time_min, len(data))
 
-    sample_rate = (mpu_time_max - mpu_time_min)/len(data)
+    sample_rate = 0.001 * (mpu_time_max - mpu_time_min)/len(data)
 
     if win_len > 0:
         n_window = math.floor((mpu_time_max - mpu_time_min)/win_len)
@@ -170,31 +179,44 @@ def fft_svc(data, ts_col, feature_cols, win_len=10): # win_len=0 for unwindowed 
             swing_frequency[i, j] = 1/x[np.argmax(y)]
     if visualize:
         plt.show()
-    
+
     if win_len > 0:
         return fft_result, swing_frequency
     else:
         return fft_result[:, 0, :], swing_frequency[:, 0]
 
-if __name__ == "__main__":
-    import os 
-    dir_path = os.path.dirname(os.path.realpath(__file__))
-    file_path = dir_path + '\\1548709262.6291513.json'
-    data = np.array(ujson.load(open(file_path,'r')))
-    ts_col = 10
-    mpu_cols = [1,2,3,4,5,6]
-    hit_cols = [7,8,9]
 
+if __name__ == "__main__":
+    import os
+    import json
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    file_path = dir_path + '/1550209189_0.json'
+    data = np.array(json.load(open(file_path, 'r')))
+    # ts_col = 10
+    # mpu_cols = [1,2,3,4,5,6]
+    # hit_cols = [7,8,9]
+    ts_col = 0
+    mpu_cols = [1, 2, 3, 4, 5, 6]
+    hit_cols = [7, 8, 9]
     swing_result = list(swing_count_svc(data, ts_col, mpu_cols))
     print(swing_result)
 
     hit_result = hit_detection_svc(data, ts_col, hit_cols)
-    indices = np.argwhere(np.dot(hit_result, [[0],[1],[1]])>0)
+    indices = np.argwhere(np.dot(hit_result, [[0], [1], [1]]) > 0)
     import matplotlib.pyplot as plt
-    plt.scatter(hit_result[indices[:,0], 1], hit_result[indices[:,0], 2], alpha=.5)
-    plt.plot([-1, 1, 0,-1], [0, 0, -math.sqrt(3),0])
+    plt.scatter(hit_result[indices[:, 0], 1],
+                hit_result[indices[:, 0], 2], alpha=.5)
+    plt.plot([-1, 1, 0, -1], [0, 0, -math.sqrt(3), 0])
     plt.show()
     # print(hit_result)
+
+    i = mpu_cols[2]
+    plt.plot(data[:, ts_col], (data[:, i] -
+                               data[:, i].mean())/data[:, i].std())
+    for i in hit_cols:
+        plt.scatter(data[:, ts_col], (data[:, i] -
+                                      data[:, i].mean())/data[:, i].std(), alpha=.5)
+    plt.show()
 
     fft_result, swing_freq = list(fft_svc(data, ts_col, mpu_cols))
     print(swing_freq)
