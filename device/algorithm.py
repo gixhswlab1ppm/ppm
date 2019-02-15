@@ -15,6 +15,7 @@ debug = False
 if visualize == True:
     import matplotlib.pyplot as plt
 
+#  stateless algorithms
 
 def triangulate_centroid(readings, circles=[[-1, 0], [1, 0], [0, -math.sqrt(3)]]):
 	"""
@@ -81,9 +82,9 @@ def swing_count_svc(data, ts_col, feature_cols):
                                                                      i+1].std() * np.ones(len(ts_dedup)), s=40, alpha=.5)
                 plt.plot(data[:, 0], data[:, i+1])
                 plt.show()
-            yield math.trunc(np.average(polls))
         else:
-            yield 0
+            polls.append(0)
+    return polls
 
 
 def hit_detection_svc(data, ts_col, feature_cols):
@@ -91,7 +92,7 @@ def hit_detection_svc(data, ts_col, feature_cols):
     result = np.empty((len(data), 2), dtype=float)
     for i, entry in enumerate(data):
         if np.sum(entry[1:]) > 0:
-            result[i] = triangulate_centroid(entry[1:])
+            result[i] = triangulate_centroid(entry[1:]) # add "confidence": sum of values, to discriminate zero val result
         else:
             result[i] = [0, 0]
     return np.hstack([data[:, [0]], result]).reshape(-1, 3)
@@ -214,8 +215,7 @@ if __name__ == "__main__":
     plt.plot(data[:, ts_col], (data[:, i] -
                                data[:, i].mean())/data[:, i].std())
     for i in hit_cols:
-        plt.scatter(data[:, ts_col], (data[:, i] -
-                                      data[:, i].mean())/data[:, i].std(), alpha=.5)
+        plt.scatter(data[:, ts_col], data[:, i]/data[:, i].std(), alpha=.5)
     plt.show()
 
     fft_result, swing_freq = list(fft_svc(data, ts_col, mpu_cols))

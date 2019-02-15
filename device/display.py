@@ -5,50 +5,57 @@ import traceback
 import threading
 import collections
 
-font15 = ImageFont.truetype('ArialNova.ttf',size=20)
-
 epd = epd2in13d.EPD()
 epd.init()
 epd.Clear(0xFF)
+dev_lock = threading.Lock()
 
-frame_buf = collections.deque(maxlen=4)
-lock = threading.Lock()
+field_locations = [[36,8,80,32], [36,36,80,60], [124,8,168,32], [124,36,168,60], [164,0,212,8]]
+field_font = ImageFont.truetype('ArialNova.ttf', size=24)
+last_img = Image.new('1', (epd2in13d.EPD_HEIGHT, epd2in13d.EPD_WIDTH), 255)
 
-def draw(img, dim=(0,0,0,0), topleft=(0,0)):
-    with lock:
-        frame_buf.appendleft((img, dim, topleft)) # dim: tuple of 4
 
-def render_daemon():
+def _render_template():
+    global last_img
+    # 4 vals of `box` has the same origin (0,0)
+    last_img.paste(Image.open('paddle.jpg'), (8,8)) #24*24
+    last_img.paste(Image.open('paddle.jpg'), (8,36)) #ball
+    last_img.paste(Image.open('paddle.jpg'), (96,8)) #clock
+    last_img.paste(Image.open('paddle.jpg'), (96,36)) #round
+    with dev_lock:
+        epd.display(epd.getbuffer(last_img))
+
+
+def update_field(field_id, field_val): # num, text
+    # multi threads accessing update_field, will cause "roll-back" hazard if without lock!
+    with dev_lock:
+        global last_img
+        background_img2 = last_img.copy()
+        field_draw = ImageDraw.Draw(background_img2)
+        field_draw.rectangle(tuple(field_locations[field_id]), fill=255)
+        field_draw.text(tuple(field_locations[field_id][:2]), str(field_val), font=field_font, fill=0)
+        cropped_img = background_img2.crop(field_locations[field_id])
+        try:
+            background_img2.paste(cropped_img, tuple(field_locations[field_id][:2]))
+            epd.DisplayPartial(epd.getbuffer(background_img2))
+            last_img = background_img2
+        except:
+            print('gg')
+    print('updated field {0} with val {1}'.format(field_id, field_val))
+
+def _update_triggerless():
+    time.sleep(2)
     while True:
-        if len(frame_buf) > 0:
-            with lock:
-                frame_img, frame_dim, frame_topleft = frame_buf.pop()
-            img = Image.new('1', (epd2in13d.EPD_HEIGHT, epd2in13d.EPD_WIDTH), 255)
-            draw = ImageDraw.Draw(img)
-            draw.rectangle(frame_dim, fill=255)
-            cropped_img = frame_img.crop(list(frame_dim))
-            cropped_img = 
-            epd.DisplayPartial(epd.getbuffer)
+        update_field(4, time.strftime('%H:%M'))
+        time.sleep(10)
+
+_render_template()
+threading.Thread(target=_update_triggerless).start()
 
 
 
-try:
-    epd.Clear(0xFF)
-    time_image = Image.new('1', (epd2in13d.EPD_HEIGHT, epd2in13d.EPD_WIDTH), 255)
-    time_draw = ImageDraw.Draw(time_image)
-    while (True):
-        time_draw.rectangle((10, 10, 120, 50), fill = 255) # the "size" of the box
-        time_draw.text((10, 10), "Swing count", font = font15, fill = 0)
-        time_draw.text((10, 30), time.strftime('%H:%M:%S'), font = font15, fill = 0)
-        newimage = time_image.crop([10, 10, 120, 50]) #  left, upper, right, and lower pixel # 212*104
-        newimage = time_image.paste(newimage, (10,10))  
-        epd.DisplayPartial(epd.getbuffer(time_image))
-        
-    epd.sleep()
-except Exception as e:
-    print('traceback.format_exc():\n%s',traceback.format_exc())
-    exit()
-
+    
+    # Image.resize()
     
     
     # # Drawing on the image

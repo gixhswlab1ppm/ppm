@@ -9,15 +9,23 @@ import math
 import os
 import circular_buffer
 from algorithm import swing_count_svc, hit_detection_svc, fft_svc
-from gpiozero import Button
 
-debug = True
-if debug:
-    print('import complete')
+debug = True # true if output more debug info to console
 
-# global settings
-button = Button(7)
-dev = serial.Serial('/dev/ttyUSB0', 9600)  # 15200
+dev_arduino = False # false if data is collected from arduino in real time
+dev_button = False # true if the start/end physical button is available
+dev_display = True # true if e-ink display is available
+
+if dev_button:
+    from gpiozero import Button
+    button = Button(7)
+
+if dev_display:
+    from display import update_field
+
+if dev_arduino:
+    dev = serial.Serial('/dev/ttyUSB0', 9600)  # 15200
+
 packet_dt = np.dtype([
     ('ts', np.uint32),
     ('accx', np.float32),
@@ -45,6 +53,8 @@ proc_buf = circular_buffer.circular_buffer(
 
 def swing_counter():
     time.sleep(5)
+    if debug:
+        swing_sum = 0
     while True:
         # based on observation of 15 packet/sec
         chunk = proc_buf.try_read(0, 150)
@@ -54,11 +64,16 @@ def swing_counter():
         result = swing_count_svc(np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)), 0, [1, 2, 3, 4, 5, 6])
         if debug:
             print('swing counter result available')
+        if dev_display and debug:
+            swing_sum += math.trunc(np.median(result))
+            update_field(0, swing_sum)
         # TODO display result
 
 
 def hit_detector():
     time.sleep(5)
+    if debug:
+        hit_sum = 0
     while True:
         chunk = proc_buf.try_read(1, 15)  # approx. per sec
         if chunk is None:
@@ -67,6 +82,9 @@ def hit_detector():
         result = hit_detection_svc(np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)), 0, [7, 8, 9])
         if debug:
             print('hit detector result available')
+        if dev_display and debug:
+            hit_sum += len([pair for pair in result if pair[1] + pair[2]>0.01])
+            update_field(1, hit_sum)
 
 
 def fft_near_realtime():
@@ -102,47 +120,74 @@ def user_input_handler(): # when not alive, worker thread will still run till da
             print('activity ends')
         global is_alive
         is_alive = False
-        button.when_pressed = start
+        if dev_button:
+            button.when_pressed = start
     def start():
         if debug:
             print('activity starts')
         global is_alive
         is_alive = True
-        button.when_pressed = end
+        if dev_button:
+            button.when_pressed = end
     if debug:
         print('boot seq complete')
     print('waiting for start')
-    button.when_pressed = start
+    if dev_button:
+        button.when_pressed = start
 
 
 threading.Thread(target=user_input_handler).start()
 
-
-while True:
-    if not is_alive:
-        if debug:
-            print('sleeping for 2 sec')
-        time.sleep(2)
-        continue
-
-    packet = None
-    if packet_ver < 1:
-        dev.read_until('!'.encode())
-        res = dev.read_until('@'.encode())
-        if not len(res) == (1 + packet_dt.itemsize):
-            continue
-        packet = tuple(struct.unpack_from(packet_fmt, res))
-    else:
-        # print('reading sensor data')
-        res = str(dev.read_until())
-        res = res[res.find('['):res.find(']')+1]
-        res = ujson.decode(res)
-        packet = tuple(res)
-
-    # data validation (no guarantee even if passed)
-    if not len(packet) == len(packet_dt):
-        continue
-
-    proc_buf.write_one(packet)
-
     
+if __name__ == "__main__":
+    if dev_arduino:
+        while True:
+            if not is_alive:
+                if debug:
+                    print('sleeping for 2 sec')
+                time.sleep(2)
+                continue
+
+            packet = None
+            if packet_ver < 1:
+                dev.read_until('!'.encode())
+                res = dev.read_until('@'.encode())
+                if not len(res) == (1 + packet_dt.itemsize):
+                    continue
+                packet = tuple(struct.unpack_from(packet_fmt, res))
+            else:
+                # print('reading sensor data')
+                res = str(dev.read_until())
+                res = res[res.find('['):res.find(']')+1]
+                res = ujson.decode(res)
+                packet = tuple(res)
+
+            # data validation (no guarantee even if passed)
+            if not len(packet) == len(packet_dt):
+                continue
+
+            proc_buf.write_one(packet)
+    else:
+        if debug:
+            print('simulation starts')
+        def run_simulate(data):
+            time.sleep(1.5)
+            global is_alive
+            is_alive = True
+            delays = .05 + np.random.rand(len(data))/10
+            for i,d in enumerate(delays):
+                proc_buf.write_one(data[i])
+                time.sleep(d)
+            if debug:
+                print('simulation ends')
+        import os
+        import json
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        file_path = dir_path + '/1550209189_0.json'
+        data = json.load(open(file_path, 'r'))
+        data = np.array([tuple(s) for s in data], dtype=packet_dt)
+        threading.Thread(target=run_simulate, args=(data,)).start()
+        while True:
+            time.sleep(10)
+
+
