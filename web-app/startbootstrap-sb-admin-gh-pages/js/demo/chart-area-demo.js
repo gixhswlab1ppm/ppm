@@ -59,6 +59,24 @@ for (var key in data) {
   // Add basic data to array for printing
   accel_x.push(data[key]["a_x"])
 }
+
+// defines dict for strong/weak thresholds for bar chart
+impact_bar = {
+  labels: ["Strong", "Weak"],
+  datasets: {
+    label: "Data",
+    backgroundColor: "rgba(2,117,216,0.2)",
+    borderColor: "rgba(2,117,216,1)",
+    borderWidth: 1,
+    data: [0, 0]}
+}
+
+// thresholding code to determine how many strong hits vs how many weak hits occur
+for (i = 0; i < impact.length; i++) {
+  if (impact[i] > 4) {impact_bar["datasets"]["data"][0] += 1;}
+  else if (impact[i] > 2.8) {impact_bar["datasets"]["data"][1] += 1;}
+}
+
 // console.log(labels)
 // console.log(data)
 // console.log(impact)
@@ -121,8 +139,49 @@ function line_chart(chart_name, item_label, data, minScale, maxScale) {
   });
 }
 
+// wip
+/*  bar_chart requires ID of a canvas in DOM,
+    label for the values,
+    data where len(data) == len(timestamps),
+    and minimum and maximum scales for y axis */
+function bar_chart(chart_name, item_label, data, minScale, maxScale) {
+  var ctx = document.getElementById(chart_name);
+  var myLineChart = new Chart(ctx, {
+    type: 'bar',
+    data: data,
+    options: {
+      scales: {
+        xAxes: [{
+          gridLines: {
+            display: true
+          },
+          ticks: {
+            maxTicksLimit: 2
+          }
+        }],
+        yAxes: [{
+          ticks: {
+            min: minScale,
+            max: maxScale,
+            maxTicksLimit: 5,
+          },
+          gridLines: {
+            color: "rgba(0, 0, 0, .125)",
+          }
+        }],
+      },
+      legend: {
+        display: false
+      }
+    }
+  });
+}
+
 // Call line_chart on data with scaling, see above
 line_chart("impactChart", "Impact Strength", impact, 0, 
   Math.ceil(impact.reduce(function(a, b) { return Math.max(a, b); }) / 8) * 8);
+// WIP
+// bar_chart("impactBarChart", "Impact Strength", impact_bar, 0, 
+//   Math.ceil(impact.reduce(function(a, b) { return Math.max(a, b); })));
 line_chart("accelerationChart", "Acceleration Speed", accel_x, 
   accel_x.reduce(function(a, b) { return Math.min(a, b); }), accel_x.reduce(function(a, b) { return Math.max(a, b); }));
