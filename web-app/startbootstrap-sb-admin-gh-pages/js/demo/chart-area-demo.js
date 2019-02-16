@@ -39,22 +39,35 @@ var accel_x = []
 for (var key in data) {
   // console.log(data[key])
   // console.log(data[key]["time"])
+  
+  // Create a time-series array for x axis for time series
   labels.push(data[key]["time"])
-  // Calculate how hard the ball hit
+  
+  /*  Calculate how hard the ball hit and 
+      add it to an array for y axis */
   var scaled_impact = Math.log(data[key]["p_1"] + data[key]["p_1"] + data[key]["p_1"] / 3)
   impact.push(scaled_impact)
+  // average out bad data
+  if (impact[impact.length - 2] == Number.NEGATIVE_INFINITY) {
+    impact[impact.length - 2] = (impact[impact.length - 1] + impact[impact.length - 3]) / 2
+      // consecutive occurance of bad data gets set to 0
+    if (impact[impact.length - 2] == Number.NEGATIVE_INFINITY) {
+      impact[impact.length - 2] = 0
+    }
+  }
+
   // Add basic data to array for printing
   accel_x.push(data[key]["a_x"])
 }
 // console.log(labels)
 // console.log(data)
-console.log(impact)
-console.log(accel_x)
+// console.log(impact)
+// console.log(accel_x)
 
-// line_chart requires ID of a canvas in DOM,
-// label for the values,
-// data where len(data) == len(timestamps),
-// and minimum and maximum scales for y axis
+/*  line_chart requires ID of a canvas in DOM,
+    label for the values,
+    data where len(data) == len(timestamps),
+    and minimum and maximum scales for y axis */
 function line_chart(chart_name, item_label, data, minScale, maxScale) {
   var ctx = document.getElementById(chart_name);
   var myLineChart = new Chart(ctx, {
@@ -62,6 +75,7 @@ function line_chart(chart_name, item_label, data, minScale, maxScale) {
     data: {
       labels: labels,
       datasets: [{
+        fill: false,
         label: item_label,
         lineTension: 0.3,
         backgroundColor: "rgba(2,117,216,0.2)",
@@ -108,5 +122,7 @@ function line_chart(chart_name, item_label, data, minScale, maxScale) {
 }
 
 // Call line_chart on data with scaling, see above
-line_chart("impactChart", "Impact Strength", impact, 0, Math.ceil(impact.reduce(function(a, b) { return Math.max(a, b); }) / 8) * 8);
-line_chart("accelerationChart", "Acceleration Speed", accel_x, accel_x.reduce(function(a, b) { return Math.min(a, b); }), accel_x.reduce(function(a, b) { return Math.max(a, b); }));
+line_chart("impactChart", "Impact Strength", impact, 0, 
+  Math.ceil(impact.reduce(function(a, b) { return Math.max(a, b); }) / 8) * 8);
+line_chart("accelerationChart", "Acceleration Speed", accel_x, 
+  accel_x.reduce(function(a, b) { return Math.min(a, b); }), accel_x.reduce(function(a, b) { return Math.max(a, b); }));
