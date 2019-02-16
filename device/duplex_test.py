@@ -12,9 +12,9 @@ from algorithm import swing_count_svc, hit_detection_svc, fft_svc
 
 debug = True # true if output more debug info to console
 
-dev_arduino = False # false if data is collected from arduino in real time
-dev_button = False # true if the start/end physical button is available
-dev_display = True # true if e-ink display is available
+dev_arduino = True # false if data is collected from arduino in real time
+dev_button = True # true if the start/end physical button is available
+dev_display = False # true if e-ink display is available
 
 if dev_button:
     from gpiozero import Button
@@ -24,7 +24,7 @@ if dev_display:
     from display import update_field
 
 if dev_arduino:
-    dev = serial.Serial('/dev/ttyUSB0', 9600)  # 15200
+    dev = serial.Serial('/dev/serial0', 9600)  # 15200, ttyACM0, ttyUSB0, serial0
 
 packet_dt = np.dtype([
     ('ts', np.uint32),
