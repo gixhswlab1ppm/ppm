@@ -67,9 +67,12 @@ def swing_count_svc(data, ts_col, feature_cols):
 
     data = shift_mean(data, ts_col, feature_cols)
     polls = []
+    if debug:
+        groups = []
     for i in range(0, len(feature_cols)):
         maxima_idx = np.array(argrelextrema(data[:, i+1], np.greater))[0]
         threshold = data[:, i+1].std()*0.6
+        # threshold = threshold if threshold > 1 else 1
         maxima_idx_filtered = [
             m_i for m_i in maxima_idx if data[m_i, i+1] > threshold]
         if len(maxima_idx_filtered) > 0:
@@ -82,8 +85,12 @@ def swing_count_svc(data, ts_col, feature_cols):
                                                                      i+1].std() * np.ones(len(ts_dedup)), s=40, alpha=.5)
                 plt.plot(data[:, 0], data[:, i+1])
                 plt.show()
+            if debug:
+                groups.append(ts_dedup)
         else:
             polls.append(0)
+    if debug:
+        return polls, groups
     return polls
 
 
@@ -191,7 +198,7 @@ if __name__ == "__main__":
     import os
     import json
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    file_path = dir_path + '/1550209189_0.json'
+    file_path = dir_path + '\\1550349479_0.json'
     data = np.array(json.load(open(file_path, 'r')))
     # ts_col = 10
     # mpu_cols = [1,2,3,4,5,6]
@@ -199,11 +206,11 @@ if __name__ == "__main__":
     ts_col = 0
     mpu_cols = [1, 2, 3, 4, 5, 6]
     hit_cols = [7, 8, 9]
-    swing_result = list(swing_count_svc(data, ts_col, mpu_cols))
-    print(swing_result)
+    swing_polls, swing_groups = list(swing_count_svc(data, ts_col, mpu_cols))
+    print(swing_polls)
 
     hit_result = hit_detection_svc(data, ts_col, hit_cols)
-    indices = np.argwhere(np.dot(hit_result, [[0], [1], [1]]) > 0)
+    indices = np.argwhere(np.abs(np.dot(hit_result, [[0], [1], [1]])) > 0)
     import matplotlib.pyplot as plt
     plt.scatter(hit_result[indices[:, 0], 1],
                 hit_result[indices[:, 0], 2], alpha=.5)
@@ -211,11 +218,14 @@ if __name__ == "__main__":
     plt.show()
     # print(hit_result)
 
-    i = mpu_cols[2]
-    plt.plot(data[:, ts_col], (data[:, i] -
-                               data[:, i].mean())/data[:, i].std())
-    for i in hit_cols:
-        plt.scatter(data[:, ts_col], data[:, i]/data[:, i].std(), alpha=.5)
+    i = mpu_cols[1]
+    plt.plot(data[:, ts_col], 130 + 10*(data[:, i+1] -
+                               data[:, i+1].mean())/data[:, i+1].std())
+    for h in hit_cols:
+        plt.scatter(data[:, ts_col], data[:, h], alpha=.5, label=h)
+    for idx, ts_dedup in enumerate(swing_groups):
+        plt.scatter([np.mean(tsd) for tsd in ts_dedup], (10*idx + 100) * np.ones(len(ts_dedup)), s=50, alpha=.2, label=mpu_cols[idx])
+    plt.legend(loc='upper right')
     plt.show()
 
     fft_result, swing_freq = list(fft_svc(data, ts_col, mpu_cols))
