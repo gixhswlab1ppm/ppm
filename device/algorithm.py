@@ -106,7 +106,7 @@ def hit_detection_svc(data, ts_col, feature_cols):
 
 
 # win_len=0 for unwindowed fft, unit: millisec
-def fft_svc(data, ts_col, feature_cols, win_len=10000):
+def fft_svc(data, ts_col, feature_cols, win_len=15000):
     def fft(y_temp, topk=.1, sample_rate=0.005):  # 5e-3s, 5ms):
         """
         Given a feature vector (1-D) sorted in time domain, this function performs a Fast DFT (real part only) and returns:
@@ -206,6 +206,11 @@ if __name__ == "__main__":
     ts_col = 0
     mpu_cols = [1, 2, 3, 4, 5, 6]
     hit_cols = [7, 8, 9]
+
+    # check if data points are ordered & have consistent segments
+    plt.scatter(range(len(data)), data[:, ts_col],s=10,alpha=.5)
+    plt.show()
+
     swing_polls, swing_groups = list(swing_count_svc(data, ts_col, mpu_cols))
     print(swing_polls)
 
@@ -225,6 +230,13 @@ if __name__ == "__main__":
         plt.scatter(data[:, ts_col], data[:, h], alpha=.5, label=h)
     for idx, ts_dedup in enumerate(swing_groups):
         plt.scatter([np.mean(tsd) for tsd in ts_dedup], (10*idx + 100) * np.ones(len(ts_dedup)), s=50, alpha=.2, label=mpu_cols[idx])
+    plt.legend(loc='upper right')
+    plt.show()
+
+    for h in hit_cols:
+        x = np.zeros(len(data), dtype=bool)
+        x[np.argwhere(data[:,h]>0)]=True
+        plt.scatter(data[:, ts_col], x, alpha=.5, label=h, s=data[:,h])
     plt.legend(loc='upper right')
     plt.show()
 
