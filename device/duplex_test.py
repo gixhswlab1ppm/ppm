@@ -8,7 +8,7 @@ import numpy as np
 import math
 import os
 import circular_buffer
-from algorithm import swing_count_svc, hit_detection_svc, fft_svc
+from algorithm import swing_count_svc, hit_detection_svc, fft_svc, get_swing_count_from_ts_clusters_by_feature
 
 debug = True # true if output more debug info to console
 
@@ -21,7 +21,7 @@ if dev_button:
     button = Button(7)
 
 if dev_display:
-    from display import update_field
+    from display import update_display_partial
 
 if dev_arduino:
     dev = serial.Serial('/dev/serial0', 9600)  # 15200, ttyACM0, ttyUSB0, serial0
@@ -61,13 +61,13 @@ def swing_counter():
         if chunk is None:
             time.sleep(.5 if not is_alive else 5)  # long sleep until data ready
             continue
-        result = swing_count_svc(np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)), 0, [1, 2, 3, 4, 5, 6])
+        ts_clusters_by_feature = list(swing_count_svc(np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)), 0, [1, 2, 3, 4, 5, 6]))
+        swing_count = get_swing_count_from_ts_clusters_by_feature(ts_clusters_by_feature)
         if debug:
             print('swing counter result available')
         if dev_display and debug:
-            swing_sum += math.trunc(np.median(result))
-            update_field(0, swing_sum)
-        # TODO display result
+            swing_sum += swing_count
+            update_display_partial(0, swing_sum) # TODO async?
 
 
 def hit_detector():
@@ -84,7 +84,7 @@ def hit_detector():
             print('hit detector result available')
         if dev_display and debug:
             hit_sum += len([pair for pair in result if pair[1] + pair[2]>0.01])
-            update_field(1, hit_sum)
+            update_display_partial(1, hit_sum)
 
 
 def fft_near_realtime():

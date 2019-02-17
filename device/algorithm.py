@@ -7,15 +7,17 @@ from scipy.signal import argrelextrema
 import ujson
 import os
 import math
+from scipy import stats
 dir_path = os.path.dirname(os.path.realpath(__file__))
 
-visualize = False
-debug = False
+visualize = True
+debug = True
 
 if visualize == True:
     import matplotlib.pyplot as plt
 
 #  stateless algorithms
+
 
 def triangulate_centroid(readings, circles=[[-1, 0], [1, 0], [0, -math.sqrt(3)]]):
 	"""
@@ -32,14 +34,11 @@ def shift_mean(data, ts_col, feature_cols):
     ])
 
 
-def swing_count_svc(data, ts_col, feature_cols):
-    def clustering_dedup(maximas):  # maximas: timestamps
+def clustering_dedup(maximas, seg_span=1500):  # maximas: timestamps
         # merge within window until no change
         # 2-level clustering (dedup then detect, respectively)
         idx_min = maximas.min()
         idx_max = maximas.max()
-
-        seg_span = 1500  # millisecond # TODO change to millisec if using new ts type!
 
         segs = np.array(maximas).reshape(-1, 1)
         if debug == True:
@@ -65,10 +64,9 @@ def swing_count_svc(data, ts_col, feature_cols):
             print("!!!")
         return segs
 
+
+def swing_count_svc(data, ts_col, feature_cols):
     data = shift_mean(data, ts_col, feature_cols)
-    polls = []
-    if debug:
-        groups = []
     for i in range(0, len(feature_cols)):
         maxima_idx = np.array(argrelextrema(data[:, i+1], np.greater))[0]
         threshold = data[:, i+1].std()*0.6
@@ -76,22 +74,29 @@ def swing_count_svc(data, ts_col, feature_cols):
         maxima_idx_filtered = [
             m_i for m_i in maxima_idx if data[m_i, i+1] > threshold]
         if len(maxima_idx_filtered) > 0:
-            ts_dedup = clustering_dedup(data[maxima_idx_filtered, 0])
-            polls.append(len(ts_dedup))  # silly polling for now
+            ts_clusters_by_feature = clustering_dedup(
+                data[maxima_idx_filtered, 0], seg_span=1500)
             if visualize:
                 plt.scatter(data[maxima_idx_filtered, 0],
                             data[maxima_idx_filtered, i+1], s=20, alpha=.5)
-                plt.scatter([np.mean(tsd) for tsd in ts_dedup], data[:,
-                                                                     i+1].std() * np.ones(len(ts_dedup)), s=40, alpha=.5)
+                plt.scatter([np.mean(tsd) for tsd in ts_clusters_by_feature], data[:,
+                                                                                   i+1].std() * np.ones(len(ts_clusters_by_feature)), s=40, alpha=.5)
                 plt.plot(data[:, 0], data[:, i+1])
                 plt.show()
-            if debug:
-                groups.append(ts_dedup)
+            yield ts_clusters_by_feature
         else:
-            polls.append(0)
-    if debug:
-        return polls, groups
-    return polls
+            yield []
+
+
+def get_swing_count_from_ts_clusters_by_feature(ts_clusters_by_feature):
+    return int(np.round(np.median([len(clusters) for clusters in ts_clusters_by_feature])))
+
+
+def get_swing_centers_from_ts_cluster_by_feature(ts_clusters_by_feature):
+    centers_by_feature = []
+    for clusters in ts_clusters_by_feature:
+        centers_by_feature.append([np.mean(cluster) for cluster in clusters])
+    return centers_by_feature
 
 
 def hit_detection_svc(data, ts_col, feature_cols):
@@ -99,10 +104,36 @@ def hit_detection_svc(data, ts_col, feature_cols):
     result = np.empty((len(data), 2), dtype=float)
     for i, entry in enumerate(data):
         if np.sum(entry[1:]) > 0:
-            result[i] = triangulate_centroid(entry[1:]) # add "confidence": sum of values, to discriminate zero val result
+            # add "confidence": sum of values, to discriminate zero val result
+            result[i] = triangulate_centroid(entry[1:])
         else:
             result[i] = [0, 0]
     return np.hstack([data[:, [0]], result]).reshape(-1, 3)
+
+
+def extract_features_vs_hit_data(data, ts_col, hit_cols, feature_cols):
+    # TODO zero shift removal
+    valued_indices_mask = np.zeros(len(data), dtype=bool)
+    for hc in hit_cols:
+        valued_indices_mask[np.argwhere(data[:, hc] > 0)] = True
+    ts_clusters = clustering_dedup(
+        data[np.argwhere(valued_indices_mask == True), 0], seg_span=1000)
+    # take last element of each cluster as end of each swing window
+    for cluster in ts_clusters:
+        window = [cluster[0], cluster[-1]]
+
+        X_indices = np.intersect1d(np.argwhere(
+            data[:, ts_col] > window[0] - 1000), np.argwhere(data[:, ts_col] <= window[1]))
+        X = data[:, feature_cols][X_indices]
+
+        y_indices = np.intersect1d(np.argwhere(
+            data[:, ts_col] >= cluster[0]), np.argwhere(data[:, ts_col] <= cluster[-1]))
+        y = data[:, hit_cols][y_indices]
+
+        yield (X,y,window)
+        # X - 1 2 3 4 5
+        # y - / / / 2 3
+        # w - / / / T T
 
 
 # win_len=0 for unwindowed fft, unit: millisec
@@ -197,46 +228,57 @@ def fft_svc(data, ts_col, feature_cols, win_len=15000):
 if __name__ == "__main__":
     import os
     import json
+    import matplotlib.pyplot as plt
+
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    file_path = dir_path + '\\1550349479_0.json'
+    file_path = dir_path[:-7] + '\\data\\1550355620_0.json'
     data = np.array(json.load(open(file_path, 'r')))
-    # ts_col = 10
-    # mpu_cols = [1,2,3,4,5,6]
-    # hit_cols = [7,8,9]
+
     ts_col = 0
     mpu_cols = [1, 2, 3, 4, 5, 6]
     hit_cols = [7, 8, 9]
 
+    training_set = list(extract_features_vs_hit_data(data, ts_col, hit_cols, mpu_cols))
+    X, y, w = training_set
+    y = [max(hit_data) for hit_data in y]
+
     # check if data points are ordered & have consistent segments
-    plt.scatter(range(len(data)), data[:, ts_col],s=10,alpha=.5)
+    plt.scatter(range(len(data)), data[:, ts_col], s=10, alpha=.5)
     plt.show()
 
-    swing_polls, swing_groups = list(swing_count_svc(data, ts_col, mpu_cols))
-    print(swing_polls)
+    ts_clusters_by_feature = list(swing_count_svc(data, ts_col, mpu_cols))
+    print(get_swing_count_from_ts_clusters_by_feature(ts_clusters_by_feature))
 
     hit_result = hit_detection_svc(data, ts_col, hit_cols)
     indices = np.argwhere(np.abs(np.dot(hit_result, [[0], [1], [1]])) > 0)
-    import matplotlib.pyplot as plt
+
     plt.scatter(hit_result[indices[:, 0], 1],
                 hit_result[indices[:, 0], 2], alpha=.5)
     plt.plot([-1, 1, 0, -1], [0, 0, -math.sqrt(3), 0])
     plt.show()
-    # print(hit_result)
 
     i = mpu_cols[1]
     plt.plot(data[:, ts_col], 130 + 10*(data[:, i+1] -
-                               data[:, i+1].mean())/data[:, i+1].std())
+                                        data[:, i+1].mean())/data[:, i+1].std())
     for h in hit_cols:
         plt.scatter(data[:, ts_col], data[:, h], alpha=.5, label=h)
-    for idx, ts_dedup in enumerate(swing_groups):
-        plt.scatter([np.mean(tsd) for tsd in ts_dedup], (10*idx + 100) * np.ones(len(ts_dedup)), s=50, alpha=.2, label=mpu_cols[idx])
+    for idx, clusters in enumerate(ts_clusters_by_feature):
+        plt.scatter([np.mean(c) for c in clusters], (10*idx + 100) *
+                    np.ones(len(clusters)), s=50, alpha=.2, label=mpu_cols[idx])
     plt.legend(loc='upper right')
     plt.show()
 
+    # hit-point viz & correlation w/ swing counts
     for h in hit_cols:
         x = np.zeros(len(data), dtype=bool)
-        x[np.argwhere(data[:,h]>0)]=True
-        plt.scatter(data[:, ts_col], x, alpha=.5, label=h, s=data[:,h])
+        x[np.argwhere(data[:, h] > 0)] = True
+        plt.scatter(data[:, ts_col], x, alpha=.5, label=h, s=data[:, h])
+
+    ts_centers_by_feature = get_swing_centers_from_ts_cluster_by_feature(
+        ts_clusters_by_feature)
+    for i, centers in enumerate(ts_centers_by_feature):
+        plt.scatter(centers, 1+0.1*np.ones(len(centers)), alpha=.5, s=20+10*i)
+
     plt.legend(loc='upper right')
     plt.show()
 

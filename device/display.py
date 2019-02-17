@@ -26,7 +26,7 @@ def _render_template():
         epd.display(epd.getbuffer(last_img))
 
 
-def update_field(field_id, field_val): # num, text
+def update_display_partial(field_id, field_val): # num, text
     # multi threads accessing update_field, will cause "roll-back" hazard if without lock!
     with dev_lock:
         global last_img
@@ -46,7 +46,7 @@ def update_field(field_id, field_val): # num, text
 def _update_triggerless():
     time.sleep(2)
     while True:
-        update_field(4, time.strftime('%H:%M'))
+        update_display_partial(4, time.strftime('%H:%M'))
         time.sleep(10)
 
 _render_template()
