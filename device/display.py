@@ -10,7 +10,10 @@ epd.init()
 epd.Clear(0xFF)
 dev_lock = threading.Lock()
 
-field_locations = [[36,8,80,32], [36,36,80,60], [124,8,168,32], [124,36,168,60], [164,0,212,8]]
+time_font = ImageFont.truetype('ArialNova.ttf', size=12)
+
+
+field_locations = [[36,8,96,32], [36,36,96,60], [124,8,212,32], [124,36,212,60], [164,0,212,8]]
 field_font = ImageFont.truetype('ArialNova.ttf', size=24)
 last_img = Image.new('1', (epd2in13d.EPD_HEIGHT, epd2in13d.EPD_WIDTH), 255)
 
@@ -26,7 +29,7 @@ def _render_template():
         epd.display(epd.getbuffer(last_img))
 
 
-def update_display_partial(field_id, field_val): # num, text
+def update_display_partial(field_id, field_val, field_font=field_font): # num, text
     # multi threads accessing update_field, will cause "roll-back" hazard if without lock!
     with dev_lock:
         global last_img
@@ -46,8 +49,8 @@ def update_display_partial(field_id, field_val): # num, text
 def _update_triggerless():
     time.sleep(2)
     while True:
-        update_display_partial(4, time.strftime('%H:%M'))
-        time.sleep(10)
+        update_display_partial(4, time.strftime('%H:%M:%S'), time_font)
+        time.sleep(1)
 
 _render_template()
 threading.Thread(target=_update_triggerless).start()

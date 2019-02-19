@@ -8,13 +8,14 @@ import numpy as np
 import math
 import os
 import circular_buffer
-from algorithm import swing_count_svc, hit_detection_svc, fft_svc, get_swing_count_from_ts_clusters_by_feature
+from algorithm import swing_count_svc, hit_report_svc, fft_svc, get_swing_count_from_ts_clusters_by_feature
 
 debug = True # true if output more debug info to console
 
 dev_arduino = True # false if data is collected from arduino in real time
 dev_button = True # true if the start/end physical button is available
-dev_display = False # true if e-ink display is available
+dev_display = True # true if e-ink display is available
+dev_pi = True
 
 if dev_button:
     from gpiozero import Button
@@ -57,7 +58,7 @@ def swing_counter():
         swing_sum = 0
     while True:
         # based on observation of 15 packet/sec
-        chunk = proc_buf.try_read(0, 150)
+        chunk = proc_buf.try_read(0, 50)
         if chunk is None:
             time.sleep(.5 if not is_alive else 5)  # long sleep until data ready
             continue
@@ -65,26 +66,33 @@ def swing_counter():
         swing_count = get_swing_count_from_ts_clusters_by_feature(ts_clusters_by_feature)
         if debug:
             print('swing counter result available')
-        if dev_display and debug:
+        if dev_display:
             swing_sum += swing_count
             update_display_partial(0, swing_sum) # TODO async?
 
 
-def hit_detector():
+def hit_reporter():
     time.sleep(5)
     if debug:
-        hit_sum = 0
+        count_sum = 0
+        score_ave = 0
     while True:
-        chunk = proc_buf.try_read(1, 15)  # approx. per sec
+        chunk = proc_buf.try_read(1, 30)  # approx. per sec
         if chunk is None:
             time.sleep(.1 if not is_alive else 5)
             continue
-        result = hit_detection_svc(np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)), 0, [7, 8, 9])
+        scores, centers = hit_report_svc(np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)), 0, [7, 8, 9])
         if debug:
             print('hit detector result available')
-        if dev_display and debug:
-            hit_sum += len([pair for pair in result if pair[1] + pair[2]>0.01])
-            update_display_partial(1, hit_sum)
+        if dev_display:
+            score_ave_delta = 0
+            count_delta = len(centers)
+            if count_delta > 0:
+                score_ave_delta = (score_ave * count_sum + np.sum(scores))/(count_sum + count_delta) - score_ave
+                score_ave += score_ave_delta
+                count_sum += count_delta
+                update_display_partial(1, str(count_sum) + " (+" + str(count_delta) + ")")
+                update_display_partial(2, str(int(100 * score_ave)) + " (" + ("+" if score_ave_delta > 0 else "") + str(int(100*score_ave_delta)) + ")") 
 
 
 def fft_near_realtime():
@@ -99,7 +107,6 @@ def fft_near_realtime():
             print('fft_nrt result available')
 
 
-
 # def lt_precise_insights(file_name):
 #     # load all data since program start
 #     sensor_data = ujson.load(open(file_name, 'r'))
@@ -108,8 +115,8 @@ def fft_near_realtime():
 def user_input_handler(): # when not alive, worker thread will still run till data processed
     worker_threads = [
         threading.Thread(target=swing_counter),
-        threading.Thread(target=hit_detector),
-        threading.Thread(target=fft_near_realtime)
+        threading.Thread(target=hit_reporter),
+        # threading.Thread(target=fft_near_realtime)
     ]
     for th in worker_threads:
         th.start()
@@ -183,7 +190,10 @@ if __name__ == "__main__":
         import os
         import json
         dir_path = os.path.dirname(os.path.realpath(__file__))
-        file_path = dir_path + '/1550209189_0.json'
+        if dev_pi:
+            file_path = dir_path + '/1550355620_0.json'
+        else:
+            file_path = dir_path[:-7] + '/data/1550355620_0.json'
         data = json.load(open(file_path, 'r'))
         data = np.array([tuple(s) for s in data], dtype=packet_dt)
         threading.Thread(target=run_simulate, args=(data,)).start()
