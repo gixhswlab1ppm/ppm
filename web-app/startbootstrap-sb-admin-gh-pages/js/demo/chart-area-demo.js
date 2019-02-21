@@ -29,7 +29,8 @@ var raw;
 
 var storage = firebase.storage();
 storageRef = storage.ref('');
-console.log("1", storageRef);
+// console.log("1", storageRef);
+// latest_file(storageRef);
 storageRef.child('1550209189_0.json').getDownloadURL().then(function (url) {
     var xhr = new XMLHttpRequest();
     xhr.responseType = 'json';
@@ -62,6 +63,25 @@ storageRef.child('1550209189_0.json').getDownloadURL().then(function (url) {
 // Set new default font family and font color to mimic Bootstrap's default styling
 Chart.defaults.global.defaultFontFamily = '-apple-system,system-ui,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif';
 Chart.defaults.global.defaultFontColor = '#292b2c';
+
+/* Function latest_file figures out the most recent file
+   in the Firebase Storage which is active */
+function latest_file(storage) {
+  // see https://cloud.google.com/nodejs/docs/reference/storage/1.7.x/Bucket
+  // and https://cloud.google.com/nodejs/docs/reference/storage/1.7.x/Bucket.html#getFiles
+  // including require in HTML index file broke chart.js somehow
+  // require(['@google-cloud/storage'], function (gcs) {
+  //     //gcs is now loaded.
+  // });
+  // console.log("what files exist");
+  // var query = {
+  //   directory: '/'
+  // };
+  // gcs.bucket(storage.bucket).getFiles(query, function(err, files, nextQuery, apiResponse) {
+  //    console.log("here")
+  //    console.log(files);
+  // });
+}
 
 /* Function parse_data takes in the json file from the server
    and parses the files into global variables declared as such:
