@@ -37,6 +37,29 @@ class circular_buffer():
             if self._writer == 0:  # reached 1 epoch, now dumping to file; synchronous for now
                 file_name = str(self._ts) + "_" + str(self._epoch) + ".json"
                 json.dump(np.flip(self._buf, axis=0).tolist(), open(file_name, 'w')) # only supports serializable dtype or serializable fields of dtype
+                
+                # firebase storage code
+                import pyrebase
+
+                config = {
+                  "apiKey": "AIzaSyDnDjyTHvySbS6gHN9kA_xsRhj_cqjGdac",
+                  "authDomain": "hwsw-lab.firebaseapp.com",
+                  "databaseURL": "https://hwsw-lab.firebaseio.com",
+                  "projectID": "hwsw-lab",
+                  "storageBucket": "hwsw-lab.appspot.com",
+                  "messagingSenderId": "709816656037"
+                }
+
+                firebase = pyrebase.initialize_app(config)
+                auth = firebase.auth()
+                user = auth.sign_in_with_email_and_password('opsec@google.com', 'opsec1')
+                storage = firebase.storage()
+                # as admin - TRY NOT TO USE
+                # storage.child("images/example.jpg").put("example2.jpg")
+                # as user - THIS SHOULD WORK
+                storage.put(file_name, user['idToken'])
+                # end firebase storage code
+
                 if debug:
                     print('file dumped @ epoch {0}'.format(self._epoch))
                 self._epoch += 1
