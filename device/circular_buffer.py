@@ -5,6 +5,30 @@ import math
 import json
 
 debug = True
+stroage = True
+
+
+storage_svc = None
+
+def init_storage():
+    global storage_svc
+# firebase storage code
+    import pyrebase
+
+    config = {
+      "apiKey": "AIzaSyDnDjyTHvySbS6gHN9kA_xsRhj_cqjGdac",
+      "authDomain": "hwsw-lab.firebaseapp.com",
+      "databaseURL": "https://hwsw-lab.firebaseio.com",
+      "projectID": "hwsw-lab",
+      "storageBucket": "hwsw-lab.appspot.com",
+      "messagingSenderId": "709816656037"
+    }
+
+    firebase = pyrebase.initialize_app(config)
+    auth = firebase.auth()
+    user = auth.sign_in_with_email_and_password('opsec@google.com', 'opsec1')
+    storage_svc = firebase.storage()
+
 
 class circular_buffer():
     '''
@@ -38,30 +62,21 @@ class circular_buffer():
                 file_name = str(self._ts) + "_" + str(self._epoch) + ".json"
                 json.dump(np.flip(self._buf, axis=0).tolist(), open(file_name, 'w')) # only supports serializable dtype or serializable fields of dtype
                 
-                # firebase storage code
-                import pyrebase
-
-                config = {
-                  "apiKey": "AIzaSyDnDjyTHvySbS6gHN9kA_xsRhj_cqjGdac",
-                  "authDomain": "hwsw-lab.firebaseapp.com",
-                  "databaseURL": "https://hwsw-lab.firebaseio.com",
-                  "projectID": "hwsw-lab",
-                  "storageBucket": "hwsw-lab.appspot.com",
-                  "messagingSenderId": "709816656037"
-                }
-
-                firebase = pyrebase.initialize_app(config)
-                auth = firebase.auth()
-                user = auth.sign_in_with_email_and_password('opsec@google.com', 'opsec1')
-                storage = firebase.storage()
+                if not (storage_svc is None):
                 # as admin - TRY NOT TO USE
                 # storage.child("images/example.jpg").put("example2.jpg")
                 # as user - THIS SHOULD WORK
-                storage.put(file_name, user['idToken'])
+                    try:
+                        if debug:
+                            print("sending file {0} to firebase".format(file_name))
+                        storage_svc.put(file_name, user['idToken'])
+                    except:
+                        if debug:
+                            print("file transmission to firebase failed")
                 # end firebase storage code
 
                 if debug:
-                    print('file dumped @ epoch {0}'.format(self._epoch))
+                    print('file dumped locally @ epoch {0}'.format(self._epoch))
                 self._epoch += 1
             self._writer = (self._writer - 1) % self._maxlen
 
@@ -112,6 +127,8 @@ class circular_buffer():
     def get_len(self, reader_idx):
         return np.sum(self._valid[reader_idx])
 
+if storage:
+    init_storage()
 
 if __name__ == "__main__":
     cb = circular_buffer(5, 3, np.dtype(float))
