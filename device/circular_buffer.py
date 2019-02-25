@@ -5,13 +5,14 @@ import math
 import json
 
 debug = True
-stroage = True
+storage = True
 
 
 storage_svc = None
+storage_user = None
 
 def init_storage():
-    global storage_svc
+    global storage_svc, storage_user
 # firebase storage code
     import pyrebase
 
@@ -26,8 +27,9 @@ def init_storage():
 
     firebase = pyrebase.initialize_app(config)
     auth = firebase.auth()
-    user = auth.sign_in_with_email_and_password('opsec@google.com', 'opsec1')
+    storage_user = auth.sign_in_with_email_and_password('opsec@google.com', 'opsec1')
     storage_svc = firebase.storage()
+
 
 
 class circular_buffer():
@@ -51,7 +53,6 @@ class circular_buffer():
         self._writer = self._maxlen-1  # position to write; no check for readers
         self._epoch = 0
         self._ts = math.floor(time.time())
-
     def write_one(self, data):
         with self._lock:
             self._buf[self._writer] = data
@@ -62,15 +63,19 @@ class circular_buffer():
                 file_name = str(self._ts) + "_" + str(self._epoch) + ".json"
                 json.dump(np.flip(self._buf, axis=0).tolist(), open(file_name, 'w')) # only supports serializable dtype or serializable fields of dtype
                 
-                if not (storage_svc is None):
+                if not (storage_svc is None) and not (storage_user is None):
                 # as admin - TRY NOT TO USE
                 # storage.child("images/example.jpg").put("example2.jpg")
                 # as user - THIS SHOULD WORK
                     try:
                         if debug:
                             print("sending file {0} to firebase".format(file_name))
-                        storage_svc.put(file_name, user['idToken'])
-                    except:
+                        file_name_hack = int(100*(time.time() - 1550776545)/10800)
+                        child = storage_svc.child(str(file_name_hack) + ".json")
+                        resp = child.put(file_name, storage_user['idToken'])
+                        if debug:
+                            print("file transmission succeeded")
+                    except Exception:
                         if debug:
                             print("file transmission to firebase failed")
                 # end firebase storage code

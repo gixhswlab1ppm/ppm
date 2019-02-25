@@ -233,70 +233,70 @@ def fft_svc(data, ts_col, feature_cols, win_len=15000):
     else:
         return fft_result[:, 0, :], swing_frequency[:, 0]
 
-# def train_rnn(X,y, X_test, y_test):
-#     from sklearn.preprocessing import StandardScaler
-#     import tensorflow as tf
+def train_rnn(X,y, X_test, y_test):
+    from sklearn.preprocessing import StandardScaler
+    import tensorflow as tf
     
     
-#     config = tf.ConfigProto()
-#     config.gpu_options.allow_growth = True
-#     sess = tf.Session(config=config)
-#     sess.__enter__()
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    sess = tf.Session(config=config)
+    sess.__enter__()
 
-#     X = tf.keras.preprocessing.sequence.pad_sequences(X, maxlen=16, dtype='float')
-#     X_test = tf.keras.preprocessing.sequence.pad_sequences(X_test, maxlen=16, dtype='float')
+    X = tf.keras.preprocessing.sequence.pad_sequences(X, maxlen=16, dtype='float')
+    X_test = tf.keras.preprocessing.sequence.pad_sequences(X_test, maxlen=16, dtype='float')
     
-#     # for i in range(6):
-#     #     col_2 = []
-#     #     for xi in X:
-#     #         col_2.append([xii[i] for xii in xi])
-#     #     for c in col_2:
-#     #         plt.figure(i)
-#     #         plt.plot(c)
+    # for i in range(6):
+    #     col_2 = []
+    #     for xi in X:
+    #         col_2.append([xii[i] for xii in xi])
+    #     for c in col_2:
+    #         plt.figure(i)
+    #         plt.plot(c)
     
-#     # plt.show()
+    # plt.show()
 
 
-#     model = tf.keras.Sequential()
-#     model.add(tf.keras.layers.LSTM(units=32,dropout=.2,recurrent_dropout=.2, input_shape=(16, 6)))
-#     model.add(tf.keras.layers.Dense(32, activation='elu'))    
-#     model.add(tf.keras.layers.Dropout(.5))
-#     model.add(tf.keras.layers.Dense(32, activation='elu'))    
-#     model.add(tf.keras.layers.Dropout(.5))
-#     model.add(tf.keras.layers.Dense(1, activation='sigmoid'))
-#     print(model.summary())
-#     model.compile(optimizer='adam',loss='mean_squared_error',metrics=['mse'])
-#     # TODO !impt scale by each feature X = StandardScaler().fit_transform(X)
-#     history = model.fit(X, y, epochs=1024, validation_data=(X_test, y_test))
-#     y_pred = model.predict(X)
-#     y_test_pred = model.predict(X_test)
-#     y_err = np.divide(np.abs(np.array(y)-y_pred.reshape(len(y))), np.array(y))  
-#     y_test_err = np.divide(np.abs(np.array(y_test)-y_test_pred.reshape(len(y_test))), np.array(y_test))
-#     print('training set err mean: {0}%, 25-quant: {1}%, 50-quant: {2}%, 75-quant: {3}%'.format(100*np.mean(y_err), 100*np.quantile(y_err,0.25),100*np.quantile(y_err,0.50),100*np.quantile(y_err,0.75)))
-#     print('test set err mean: {0}%, 25-quant: {1}%, 50-quant: {2}%, 75-quant: {3}%'.format(100*np.mean(y_test_err), 100*np.quantile(y_test_err,0.25), 100*np.quantile(y_test_err,0.50), 100*np.quantile(y_test_err,0.75)))
-#     plt.figure(0)
-#     plt.plot(np.sort(y_err), label='d_y')
-#     plt.plot(np.sort(y_test_err), label='d_y_test')
-#     plt.legend(loc='upper right')
-#     plt.ylim([0,2])
+    model = tf.keras.Sequential()
+    model.add(tf.keras.layers.LSTM(units=32,dropout=.2,recurrent_dropout=.2, input_shape=(16, 6)))
+    model.add(tf.keras.layers.Dense(32, activation='elu'))    
+    model.add(tf.keras.layers.Dropout(.5))
+    model.add(tf.keras.layers.Dense(32, activation='elu'))    
+    model.add(tf.keras.layers.Dropout(.5))
+    model.add(tf.keras.layers.Dense(1, activation='sigmoid'))
+    print(model.summary())
+    model.compile(optimizer='adam',loss='mean_squared_error',metrics=['mse'])
+    # TODO !impt scale by each feature X = StandardScaler().fit_transform(X)
+    history = model.fit(X, y, epochs=1024, validation_data=(X_test, y_test))
+    y_pred = model.predict(X)
+    y_test_pred = model.predict(X_test)
+    y_err = np.divide(np.abs(np.array(y)-y_pred.reshape(len(y))), np.array(y))  
+    y_test_err = np.divide(np.abs(np.array(y_test)-y_test_pred.reshape(len(y_test))), np.array(y_test))
+    print('training set err mean: {0}%, 25-quant: {1}%, 50-quant: {2}%, 75-quant: {3}%'.format(100*np.mean(y_err), 100*np.quantile(y_err,0.25),100*np.quantile(y_err,0.50),100*np.quantile(y_err,0.75)))
+    print('test set err mean: {0}%, 25-quant: {1}%, 50-quant: {2}%, 75-quant: {3}%'.format(100*np.mean(y_test_err), 100*np.quantile(y_test_err,0.25), 100*np.quantile(y_test_err,0.50), 100*np.quantile(y_test_err,0.75)))
+    plt.figure(0)
+    plt.plot(np.sort(y_err), label='d_y')
+    plt.plot(np.sort(y_test_err), label='d_y_test')
+    plt.legend(loc='upper right')
+    plt.ylim([0,2])
     
-#     plt.figure(1)
-#     plt.plot(history.history['loss'], label='loss_y')
-#     plt.plot(history.history['val_loss'], label='loss_y_test')
-#     plt.legend(loc='upper right')
+    plt.figure(1)
+    plt.plot(history.history['loss'], label='loss_y')
+    plt.plot(history.history['val_loss'], label='loss_y_test')
+    plt.legend(loc='upper right')
 
-#     plt.figure(2)
-#     plt.plot(y, label='y')
-#     plt.plot(y_pred, label='y_pred')
-#     plt.legend(loc='upper right')
+    plt.figure(2)
+    plt.plot(y, label='y')
+    plt.plot(y_pred, label='y_pred')
+    plt.legend(loc='upper right')
 
-#     plt.figure(3)
-#     plt.plot(y_test, label='y_test')
-#     plt.plot(y_test_pred, label='y_test_pred')
-#     plt.legend(loc='upper right')
-#     plt.show()
+    plt.figure(3)
+    plt.plot(y_test, label='y_test')
+    plt.plot(y_test_pred, label='y_test_pred')
+    plt.legend(loc='upper right')
+    plt.show()
     
-#     return model
+    return model
 
 
 if __name__ == "__main__":
