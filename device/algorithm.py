@@ -19,7 +19,8 @@ if visualize == True:
 #  stateless algorithms
 
 
-def triangulate_centroid(readings, circles=[[-1, 0], [1, 0], [0, -math.sqrt(3)]]):
+# center must be (0,0)
+def triangulate_centroid(readings, circles=[[-math.sqrt(3)/2, 1/2], [math.sqrt(3)/2, 1/2], [0, -1]]):
 	"""
 	Given a 1x3 array of readings, and 3x2 array of circles
 	Returns the weighted centroid (1x2)
@@ -71,7 +72,7 @@ def swing_count_svc(data, ts_col, feature_cols, pre_thresholds=[.3, .2, .34, 50,
         maxima_idx = np.array(argrelextrema(data[:, i+1], np.greater))[0]
         # threshold = data[:, i+1].std()*0.6
         threshold = pre_thresholds[i]
-        
+
         # threshold = threshold if threshold > 1 else 1
         maxima_idx_filtered = [
             m_i for m_i in maxima_idx if data[m_i, i+1] > threshold]
@@ -101,48 +102,86 @@ def get_swing_centers_from_ts_cluster_by_feature(ts_clusters_by_feature):
     return centers_by_feature
 
 
+def get_hit_dispersity_temporal(hit_event):
+    reading_sum = np.sum(hit_event[:, 1:])
+    t_center = np.sum(np.dot(hit_event[:, 0], hit_event[:, 1:]))/reading_sum
+    dist_sum = np.sum(
+        np.dot(np.abs(hit_event[:, 0]-t_center), hit_event[:, 1:]))
+    return dist_sum/reading_sum
+
+
+def get_hit_dispersity_spatial(hit_event):
+    s_center = np.mean([triangulate_centroid(row)
+                        for row in hit_event], axis=0)
+    return np.linalg.norm(s_center)
+
+
 def hit_report_svc(data, ts_col, hit_cols):
     valued_indices_mask = np.zeros(len(data), dtype=bool)
     for hc in hit_cols:
         valued_indices_mask[np.argwhere(data[:, hc] > 0)] = True
-    if np.sum(valued_indices_mask) > 0: 
-        hit_clusters = clustering_dedup(
+    if np.sum(valued_indices_mask) > 0:
+        hit_events = clustering_dedup(
             data[np.argwhere(valued_indices_mask == True), 0], seg_span=1000)
-        hit_scores = np.empty(len(hit_clusters), dtype=float)
-        hit_centers = np.empty((len(hit_clusters),2), dtype=float)
-        for i, cluster in enumerate(hit_clusters):
-            indices = np.intersect1d(np.argwhere(
-                data[:, ts_col] >= cluster[0]), np.argwhere(data[:, ts_col] <= cluster[-1]))
-            hit_centers[i] = np.mean([triangulate_centroid(data[index, hit_cols]) for index in indices], axis=0)
-            hit_readings = data[:, hit_cols][indices].tolist()
-            hit_scores[i] = .2 *math.log(np.sum(np.max(hit_readings,axis=0))) - .1*math.log(np.sum(hit_readings))
-        return hit_scores, hit_centers
-    else:
-        return [0], []
-    
+        n_event = len(hit_events)
+        # features per "hit event"
 
-def extract_features_vs_hit_data(data, ts_col, hit_cols, feature_cols):
+        hit_dispersity_temporal = np.empty(
+            n_event, dtype=float)  # bound by hit event length
+        hit_dispersity_spatial = np.empty(
+            n_event, dtype=float)  # bound by hit triangle size
+        hit_strength = np.empty(n_event, dtype=float)  # bound by hit reading
+
+        for i, event_ts in enumerate(hit_events):
+            indices = np.intersect1d(np.argwhere(
+                data[:, ts_col] >= event_ts[0]), np.argwhere(data[:, ts_col] <= event_ts[-1]))
+            hit_event_with_ts = data[:, [ts_col, *hit_cols]][indices]
+
+            hit_dispersity_temporal[i] = np.min(
+                (1., get_hit_dispersity_temporal(hit_event_with_ts)/(1 << 7)))
+            hit_dispersity_spatial[i] = get_hit_dispersity_spatial(
+                hit_event_with_ts[:, 1:])
+            # sum of max reading along each ts
+            hit_strength[i] = np.min(
+                (1., np.sum(np.max(hit_event_with_ts[:, 1:], axis=0))/(1 << 9)))
+        return hit_dispersity_temporal, hit_dispersity_spatial, hit_strength
+    else:
+        return [], [], []
+
+
+def get_dataset(data, ts_col, Y_cols, X_cols):
+    # X: mpu; Y: hit
     valued_indices_mask = np.zeros(len(data), dtype=bool)
-    for hc in hit_cols:
+    for hc in Y_cols:
         valued_indices_mask[np.argwhere(data[:, hc] > 0)] = True
-    ts_clusters = clustering_dedup(
+    hit_events = clustering_dedup(
         data[np.argwhere(valued_indices_mask == True), 0], seg_span=1000)
     # take last element of each cluster as end of each swing window
-    for cluster in ts_clusters:
-        window = [cluster[0], cluster[-1]]
+    for event_ts in hit_events:
+        window = [event_ts[0], event_ts[-1]]
 
         X_indices = np.intersect1d(np.argwhere(
             data[:, ts_col] > window[0] - 1000), np.argwhere(data[:, ts_col] <= window[1]))
-        X = data[:, feature_cols][X_indices].tolist()
+        X = data[:, X_cols][X_indices].tolist()
 
-        y_indices = np.intersect1d(np.argwhere(
-            data[:, ts_col] >= cluster[0]), np.argwhere(data[:, ts_col] <= cluster[-1]))
-        y = data[:, hit_cols][y_indices].tolist()
+        Y_indices = np.intersect1d(np.argwhere(
+            data[:, ts_col] >= event_ts[0]), np.argwhere(data[:, ts_col] <= event_ts[-1]))
+        hit_event_with_ts = data[:, [ts_col, *Y_cols]][Y_indices]
 
-        yield (X,y,window)
+        hit_dispersity_temporal = np.min(
+            (1., get_hit_dispersity_temporal(hit_event_with_ts)/(1 << 7)))
+        hit_dispersity_spatial = get_hit_dispersity_spatial(
+            hit_event_with_ts[:, 1:])
+        # sum of max reading along each ts
+        hit_strength = np.min(
+            (1., np.sum(np.max(hit_event_with_ts[:, 1:], axis=0))/(1 << 9)))
+        Y = [hit_dispersity_temporal, hit_dispersity_spatial, hit_strength]
+
+        yield (X, Y, window)
+        # In temporal space, X extends earlier than Y:
         # X - 1 2 3 4 5
-        # y - / / / 2 3
-        # w - / / / T T
+        # Y - / / / 2 3
+        # win - / / / T T
 
 
 # win_len=0 for unwindowed fft, unit: millisec
@@ -233,19 +272,23 @@ def fft_svc(data, ts_col, feature_cols, win_len=15000):
     else:
         return fft_result[:, 0, :], swing_frequency[:, 0]
 
-def train_rnn(X,y, X_test, y_test):
+
+def train_rnn(X, Y, X_test, Y_test):
     from sklearn.preprocessing import StandardScaler
     import tensorflow as tf
-    
-    
+
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
     sess = tf.Session(config=config)
     sess.__enter__()
 
-    X = tf.keras.preprocessing.sequence.pad_sequences(X, maxlen=16, dtype='float')
-    X_test = tf.keras.preprocessing.sequence.pad_sequences(X_test, maxlen=16, dtype='float')
-    
+    X = tf.keras.preprocessing.sequence.pad_sequences(
+        X, maxlen=16, dtype='float')
+    X_test = tf.keras.preprocessing.sequence.pad_sequences(
+        X_test, maxlen=16, dtype='float')
+    Y = np.array(Y)
+    Y_test = np.array(Y_test)
+
     # for i in range(6):
     #     col_2 = []
     #     for xi in X:
@@ -253,49 +296,66 @@ def train_rnn(X,y, X_test, y_test):
     #     for c in col_2:
     #         plt.figure(i)
     #         plt.plot(c)
-    
+
     # plt.show()
 
+    input_X = tf.keras.layers.Input(shape=(16, 6))
+    lstm_0 = tf.keras.layers.LSTM(units=32, dropout=.2,
+                                  recurrent_dropout=.2)(input_X)
+    dense_0 = tf.keras.layers.Dense(32, activation='relu')(lstm_0)
+    dropout_0 = tf.keras.layers.Dropout(.5)(dense_0)
+    dense_1 = tf.keras.layers.Dense(32, activation='relu')(dropout_0)
+    dropout_1 = tf.keras.layers.Dropout(.5)(dense_1)
+    output_Y = tf.keras.layers.Dense(3, activation='sigmoid')(dropout_1)
 
-    model = tf.keras.Sequential()
-    model.add(tf.keras.layers.LSTM(units=32,dropout=.2,recurrent_dropout=.2, input_shape=(16, 6)))
-    model.add(tf.keras.layers.Dense(32, activation='elu'))    
-    model.add(tf.keras.layers.Dropout(.5))
-    model.add(tf.keras.layers.Dense(32, activation='elu'))    
-    model.add(tf.keras.layers.Dropout(.5))
-    model.add(tf.keras.layers.Dense(1, activation='sigmoid'))
+    model = tf.keras.models.Model(inputs=input_X, outputs=output_Y)
     print(model.summary())
-    model.compile(optimizer='adam',loss='mean_squared_error',metrics=['mse'])
+
+    model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mse'])
+
     # TODO !impt scale by each feature X = StandardScaler().fit_transform(X)
-    history = model.fit(X, y, epochs=1024, validation_data=(X_test, y_test))
+    history = model.fit(X, [Y], epochs=1024,
+                        validation_data=(X_test, [Y_test]))
     y_pred = model.predict(X)
     y_test_pred = model.predict(X_test)
-    y_err = np.divide(np.abs(np.array(y)-y_pred.reshape(len(y))), np.array(y))  
-    y_test_err = np.divide(np.abs(np.array(y_test)-y_test_pred.reshape(len(y_test))), np.array(y_test))
-    print('training set err mean: {0}%, 25-quant: {1}%, 50-quant: {2}%, 75-quant: {3}%'.format(100*np.mean(y_err), 100*np.quantile(y_err,0.25),100*np.quantile(y_err,0.50),100*np.quantile(y_err,0.75)))
-    print('test set err mean: {0}%, 25-quant: {1}%, 50-quant: {2}%, 75-quant: {3}%'.format(100*np.mean(y_test_err), 100*np.quantile(y_test_err,0.25), 100*np.quantile(y_test_err,0.50), 100*np.quantile(y_test_err,0.75)))
-    plt.figure(0)
-    plt.plot(np.sort(y_err), label='d_y')
-    plt.plot(np.sort(y_test_err), label='d_y_test')
-    plt.legend(loc='upper right')
-    plt.ylim([0,2])
-    
-    plt.figure(1)
-    plt.plot(history.history['loss'], label='loss_y')
-    plt.plot(history.history['val_loss'], label='loss_y_test')
-    plt.legend(loc='upper right')
 
-    plt.figure(2)
-    plt.plot(y, label='y')
-    plt.plot(y_pred, label='y_pred')
-    plt.legend(loc='upper right')
+    for i in range(3):
+        y_err = np.abs(np.array(Y[:, i])-y_pred[:, i].reshape(len(Y[:, i])))
+        y_test_err = np.abs(
+            np.array(Y_test[:, i])-y_test_pred[:, i].reshape(len(Y_test[:, i])))
+        y_err_rate = np.divide(y_err, np.array(Y[:, i]))
+        y_test_err_rate = np.divide(y_test_err, np.array(Y_test[:, i]))
+        print('>>> ', i, '-th label')
+        print('training set err mean: {0:.4f}, 25-quant: {1:.4f}, 50-quant: {2:.4f}, 75-quant: {3:.4f}'.format(np.mean(
+            y_err), np.quantile(y_err, 0.25), np.quantile(y_err, 0.50), np.quantile(y_err, 0.75)))
+        print('training set err rate mean: {0:.4f}%, 25-quant: {1:.4f}%, 50-quant: {2:.4f}%, 75-quant: {3:.4f}%'.format(100*np.mean(
+            y_err_rate), 100*np.quantile(y_err_rate, 0.25), 100*np.quantile(y_err_rate, 0.50), 100*np.quantile(y_err_rate, 0.75)))
+        print('test set err mean: {0:.4f}, 25-quant: {1:.4f}, 50-quant: {2:.4f}, 75-quant: {3:.4f}'.format(np.mean(y_test_err),
+                                                                                               np.quantile(y_test_err, 0.25), np.quantile(y_test_err, 0.50), np.quantile(y_test_err, 0.75)))
+        print('test set err rate mean: {0:.4f}%, 25-quant: {1:.4f}%, 50-quant: {2:.4f}%, 75-quant: {3:.4f}%'.format(100*np.mean(y_test_err_rate),
+                                                                                                    100*np.quantile(y_test_err_rate, 0.25), 100*np.quantile(y_test_err_rate, 0.50), 100*np.quantile(y_test_err_rate, 0.75)))
+        plt.figure(0)
+        plt.plot(np.sort(y_err_rate), label='d_y')
+        plt.plot(np.sort(y_test_err_rate), label='d_y_test')
+        plt.legend(loc='upper right')
+        plt.ylim([0, 2])
 
-    plt.figure(3)
-    plt.plot(y_test, label='y_test')
-    plt.plot(y_test_pred, label='y_test_pred')
-    plt.legend(loc='upper right')
-    plt.show()
-    
+        plt.figure(1)
+        plt.plot(history.history['loss'], label='loss_y')
+        plt.plot(history.history['val_loss'], label='loss_y_test')
+        plt.legend(loc='upper right')
+
+        plt.figure(2)
+        plt.plot(Y[:, i], label='y')
+        plt.plot(y_pred[:, i], label='y_pred')
+        plt.legend(loc='upper right')
+
+        plt.figure(3)
+        plt.plot(Y_test[:, i], label='y_test')
+        plt.plot(y_test_pred[:, i], label='y_test_pred')
+        plt.legend(loc='upper right')
+        plt.show()
+
     return model
 
 
@@ -305,24 +365,24 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    file_path = dir_path[:-7] + '\\data\\1550349479_0.json' # 1550349479_0
+    file_path = dir_path[:-7] + '/data/1550349479_0.json'  # 1550349479_0
     data = np.array(json.load(open(file_path, 'r')))
 
     ts_col = 0
     mpu_cols = [1, 2, 3, 4, 5, 6]
     hit_cols = [7, 8, 9]
 
-    # training_set = list(extract_features_vs_hit_data(data, ts_col, hit_cols, mpu_cols))
-    # X = [d[0] for d in training_set]
-    # y = [.2 *math.log(np.sum(np.max(d[1],axis=0))) - .1*math.log(np.sum(d[1])) for d in training_set]
+    training_set = list(get_dataset(data, ts_col, hit_cols, mpu_cols))
+    X = [d[0] for d in training_set]
+    y = [d[1] for d in training_set]
 
-    # test_set = list(extract_features_vs_hit_data(np.array(json.load(open(dir_path[:-7] + '/data/1550355620_0.json', 'r'))), ts_col, hit_cols, mpu_cols))
-    # # test_set = list(extract_features_vs_hit_data(data[400:800], ts_col, hit_cols, mpu_cols))
-    # X_test = [d[0] for d in test_set[:8]]
-    # y_test = [.2 *math.log(np.sum(np.max(d[1],axis=0))) - .1*math.log(np.sum(d[1])) for d in test_set[:8]]
+    test_set = list(get_dataset(np.array(json.load(open(
+        dir_path[:-7] + '/data/1550355620_0.json', 'r'))), ts_col, hit_cols, mpu_cols))
+    # test_set = list(extract_features_vs_hit_data(data[400:800], ts_col, hit_cols, mpu_cols))
+    X_test = [d[0] for d in test_set[:9]]
+    y_test = [d[1] for d in test_set[:9]]
 
-    # model = train_rnn(X,y, X_test, y_test)
-
+    model = train_rnn(X, y, X_test, y_test)
 
     # check if data points are ordered & have consistent segments
     plt.scatter(range(len(data)), data[:, ts_col], s=10, alpha=.5)
@@ -331,7 +391,7 @@ if __name__ == "__main__":
     ts_clusters_by_feature = list(swing_count_svc(data, ts_col, mpu_cols))
     print(get_swing_count_from_ts_clusters_by_feature(ts_clusters_by_feature))
 
-    hit_result = hit_detection_svc(data, ts_col, hit_cols)
+    hit_result = hit_report_svc(data, ts_col, hit_cols)
     indices = np.argwhere(np.abs(np.dot(hit_result, [[0], [1], [1]])) > 0)
 
     plt.scatter(hit_result[indices[:, 0], 1],

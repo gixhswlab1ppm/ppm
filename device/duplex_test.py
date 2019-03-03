@@ -60,7 +60,7 @@ def swing_counter():
         # based on observation of 15 packet/sec
         chunk = proc_buf.try_read(0, 50)
         if chunk is None:
-            time.sleep(.5 if not is_alive else 5)  # long sleep until data ready
+            time.sleep(5 if not is_alive else .5)  # long sleep until data ready
             continue
         ts_clusters_by_feature = list(swing_count_svc(np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)), 0, [1, 2, 3, 4, 5, 6]))
         swing_count = get_swing_count_from_ts_clusters_by_feature(ts_clusters_by_feature)
@@ -75,30 +75,33 @@ def hit_reporter():
     time.sleep(5)
     if debug:
         count_sum = 0
-        score_ave = 0
+        dt_avg = 0
+        ds_avg = 0
+        st_avg = 0
     while True:
         chunk = proc_buf.try_read(1, 30)  # approx. per sec
         if chunk is None:
-            time.sleep(.1 if not is_alive else 5)
+            time.sleep(5 if not is_alive else .1)
             continue
-        scores, centers = hit_report_svc(np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)), 0, [7, 8, 9])
+        h_dt, h_ds, h_st = hit_report_svc(np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)), 0, [7, 8, 9])
         if debug:
             print('hit detector result available')
         if dev_display:
-            score_ave_delta = 0
-            count_delta = len(centers)
+            dt_avg = 0.8*dt_avg + 0.2*h_dt
+            ds_avg = 0.8*ds_avg + 0.2*h_ds
+            st_avg = 0.8*st_avg + 0.2*h_st
+            count_delta = len(h_dt)
             if count_delta > 0:
-                score_ave_delta = (score_ave * count_sum + np.sum(scores))/(count_sum + count_delta) - score_ave
-                score_ave += score_ave_delta
                 count_sum += count_delta
-                update_display_partial(1, str(count_sum) + " (+" + str(count_delta) + ")")
-                update_display_partial(2, str(int(100 * score_ave)) + " (" + ("+" if score_ave_delta > 0 else "") + str(int(100*score_ave_delta)) + ")") 
+                update_display_partial(1, count_sum)
+                update_display_partial(2, int(100 * dt_avg))
+                update_display_partial(3, int(100 * st_avg)) 
 
 
 def fft_near_realtime():
     time.sleep(5)
     while True:
-        chunk = proc_buf.try_read(2, 1 << 9)  # ~10sec
+        chunk = proc_buf.try_read(2, 1 << 7)  # ~12sec
         if chunk is None:
             time.sleep(5 if not is_alive else 5)
             continue
