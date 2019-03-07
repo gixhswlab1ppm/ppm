@@ -9,10 +9,10 @@
 // // Create a storage reference from our storage service
 // var storageRef = storage.ref();
 
-var data = {};
-var labels = [];
-var impact = [];
-var accel_x = [];
+var data;
+var labels;
+var impact;
+var accel_x;
 var scaled_impact;
 
 // from https://qiita.com/coffee_and_code/items/72f00581c032693c6e33
@@ -30,31 +30,43 @@ var raw;
 var storage = firebase.storage();
 storageRef = storage.ref('');
 // console.log("1", storageRef);
-// latest_file(storageRef);
-storageRef.child('1550209189_0.json').getDownloadURL().then(function (url) {
-    var xhr = new XMLHttpRequest();
-    xhr.responseType = 'json';
-    // asynch stuff, this is basically our main
-    xhr.onload = function (event) {
-        // parse data once you've got it
-        parse_data(xhr.response);
+// inits a variable to linearly search down from
+var i = 55;
+// tries the next file
+// TODO: replace this approach with latest_file() instead of i.toString()
+try_next_file();
+function try_next_file() {
+  console.log('accessing file: '+i.toString()+'.json');
+  storageRef.child(i.toString()+'.json').getDownloadURL().then(function (url) {
+      var xhr = new XMLHttpRequest();
+      xhr.responseType = 'json';
+      // asynch stuff, this is basically our main
+      xhr.onload = function (event) {
+          // parse data once you've got it
+          parse_data(xhr.response);
 
-        // Call line_chart on data with scaling, see above
-        line_chart("impactChart", "Impact Strength", impact, 0, 
-          Math.ceil(impact.reduce(function(a, b) { return Math.max(a, b); }) / 8) * 8);
-        // WIP
-        // bar_chart("impactBarChart", "Impact Strength", impact_bar, 0, 
-        //   Math.ceil(impact.reduce(function(a, b) { return Math.max(a, b); })));
-        line_chart("accelerationChart", "Acceleration Speed", accel_x, 
-          accel_x.reduce(function(a, b) { return Math.min(a, b); }), accel_x.reduce(function(a, b) { return Math.max(a, b); }));
-    };
-    xhr.open('GET', url);
-    xhr.send();
-}).catch(function (error) {
-    // Report errors to log
-    console.log("error caught", error);
-    // Handle any errors
-});
+          // Call line_chart on data with scaling, see above
+          line_chart("impactChart", "Impact Strength", impact, 0, 
+            Math.ceil(impact.reduce(function(a, b) { return Math.max(a, b); }) / 8) * 8);
+          // WIP
+          bar_chart("impactBarChart", "Impact Strength", impact_bar, 0, 
+            Math.ceil(impact_bar["datasets"][0]["data"].reduce(function(a, b) { return Math.max(a+5, b+5); })));
+          // Call line_chart on acceleration data
+          line_chart("accelerationChart", "Acceleration Speed", accel_x, 
+            accel_x.reduce(function(a, b) { return Math.min(a, b); }), accel_x.reduce(function(a, b) { return Math.max(a, b); }));
+      };
+      xhr.open('GET', url);
+      xhr.send();
+  }).catch(function (error) {
+      // Report errors to log
+      console.log("error caught", error);
+      // part of try_next_file code
+      i--;
+      try_next_file()
+      // end of try_next_file code
+      // Handle any errors
+  });
+}
 
 // End Firebase stuff
 
@@ -91,9 +103,13 @@ function latest_file(storage) {
     var accel_x = [];
     var scaled_impact; */
 function parse_data(raw) {
+  data = {};
+  labels = [];
+  impact = [];
+  accel_x = [];
   for (i = 0; i < raw.length; i++) {
     data[i] = {
-      time: raw[i][0]/100,
+      time: raw[i][0]/1000,
       a_x: raw[i][1],
       a_y: raw[i][2],
       a_z: raw[i][3],
@@ -115,7 +131,7 @@ function parse_data(raw) {
     /*  Calculate how hard the ball hit and 
         add it to an array for y axis */
     scaled_impact = Math.log(data[key]["p_1"] + data[key]["p_1"] + data[key]["p_1"] / 3)
-    impact.push(scaled_impact)
+    impact.push(Math.round((scaled_impact) * 100) / 100)
     // average out bad data
     if (impact[impact.length - 2] == Number.NEGATIVE_INFINITY) {
       impact[impact.length - 2] = (impact[impact.length - 1] + impact[impact.length - 3]) / 2
@@ -125,25 +141,35 @@ function parse_data(raw) {
       }
     }
 
+    // catch zeroes and negative infinities from final list
+    for (var i = 0; i < impact.length; i++) {
+      if (impact[i] == Number.NEGATIVE_INFINITY) {
+        impact[i] = 0;
+      }
+      else if (isNaN(impact[i])) {
+        impact[i] = 0;
+      }
+    }
+
     // Add basic data to array for printing
-    accel_x.push(data[key]["a_x"])
+    accel_x.push(Math.round((data[key]["a_x"]) * 1000) / 10)
   }
 
   // defines dict for strong/weak thresholds for bar chart
   impact_bar = {
     labels: ["Strong", "Weak"],
-    datasets: {
+    datasets: [{
       label: "Data",
       backgroundColor: "rgba(2,117,216,0.2)",
       borderColor: "rgba(2,117,216,1)",
       borderWidth: 1,
-      data: [0, 0]}
+      data: [0, 0]}]
   }
 
   // thresholding code to determine how many strong hits vs how many weak hits occur
   for (i = 0; i < impact.length; i++) {
-    if (impact[i] > 4) {impact_bar["datasets"]["data"][0] += 1;}
-    else if (impact[i] > 2.8) {impact_bar["datasets"]["data"][1] += 1;}
+    if (impact[i] > 4) {impact_bar["datasets"][0]["data"][0] += 1;}
+    else if (impact[i] > 2.8) {impact_bar["datasets"][0]["data"][1] += 1;}
   }
 }
 
@@ -168,14 +194,15 @@ function line_chart(chart_name, item_label, data, minScale, maxScale) {
         lineTension: 0.3,
         backgroundColor: "rgba(2,117,216,0.2)",
         borderColor: "rgba(2,117,216,1)",
-        pointRadius: 5,
+        pointRadius: 3,
         pointBackgroundColor: "rgba(2,117,216,1)",
         pointBorderColor: "rgba(255,255,255,0.8)",
-        pointHoverRadius: 5,
+        pointHoverRadius: 3,
         pointHoverBackgroundColor: "rgba(2,117,216,1)",
         pointHitRadius: 50,
         pointBorderWidth: 2,
         data: data,
+        spanGaps: true,
       }],
     },
     options: {
@@ -188,7 +215,10 @@ function line_chart(chart_name, item_label, data, minScale, maxScale) {
             display: false
           },
           ticks: {
-            maxTicksLimit: 7
+            maxTicksLimit: 7,
+            callback: function(value, index, values) {
+              return (Math.round((value-labels[0]) * 100) / 100).toString() + 's';
+            },
           }
         }],
         yAxes: [{
@@ -223,10 +253,10 @@ function bar_chart(chart_name, item_label, data, minScale, maxScale) {
       scales: {
         xAxes: [{
           gridLines: {
-            display: true
+            display: true,
           },
           ticks: {
-            maxTicksLimit: 2
+            maxTicksLimit: 2,
           }
         }],
         yAxes: [{
@@ -241,7 +271,7 @@ function bar_chart(chart_name, item_label, data, minScale, maxScale) {
         }],
       },
       legend: {
-        display: false
+        display: false,
       }
     }
   });
