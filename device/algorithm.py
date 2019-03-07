@@ -405,13 +405,13 @@ if __name__ == "__main__":
     ts_clusters_by_feature = list(swing_count_svc(data, ts_col, mpu_cols))
     print(get_swing_count_from_ts_clusters_by_feature(ts_clusters_by_feature))
 
-    hit_result = hit_report_svc(data, ts_col, hit_cols)
-    indices = np.argwhere(np.abs(np.dot(hit_result, [[0], [1], [1]])) > 0)
+    # hit_result = hit_report_svc(data, ts_col, hit_cols)
+    # indices = np.argwhere(np.abs(np.dot(hit_result, [[0], [1], [1]])) > 0)
 
-    plt.scatter(hit_result[indices[:, 0], 1],
-                hit_result[indices[:, 0], 2], alpha=.5)
-    plt.plot([-1, 1, 0, -1], [0, 0, -math.sqrt(3), 0])
-    plt.show()
+    # plt.scatter(hit_result[indices[:, 0], 1],
+    #             hit_result[indices[:, 0], 2], alpha=.5)
+    # plt.plot([-1, 1, 0, -1], [0, 0, -math.sqrt(3), 0])
+    # plt.show()
 
     i = mpu_cols[1]
     plt.plot(data[:, ts_col], 130 + 10*(data[:, i+1] -
