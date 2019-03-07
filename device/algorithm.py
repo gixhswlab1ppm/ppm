@@ -365,12 +365,26 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    file_path = dir_path[:-7] + '/data/1550349479_0.json'  # 1550349479_0
+    file_path = dir_path[:-7] + '/data/1551925483_0.json'  # 1550349479_0
     data = np.array(json.load(open(file_path, 'r')))
 
     ts_col = 0
     mpu_cols = [1, 2, 3, 4, 5, 6]
     hit_cols = [7, 8, 9]
+
+    for h in hit_cols:
+        plt.scatter(data[:, 0], np.ones(len(data)), alpha=.5, s=data[:, h], label=h)
+    plt.legend(loc='upper right')
+    plt.show()
+    for h in hit_cols:
+        plt.scatter(data[:, 0], data[:, h], alpha=.5, label=h)
+    plt.legend(loc='upper right')
+    plt.show()
+    for m in mpu_cols:
+        plt.plot(data[:, m])
+        plt.show()
+
+
 
     training_set = list(get_dataset(data, ts_col, hit_cols, mpu_cols))
     X = [d[0] for d in training_set]
@@ -382,7 +396,7 @@ if __name__ == "__main__":
     X_test = [d[0] for d in test_set[:9]]
     y_test = [d[1] for d in test_set[:9]]
 
-    model = train_rnn(X, y, X_test, y_test)
+    # model = train_rnn(X, y, X_test, y_test)
 
     # check if data points are ordered & have consistent segments
     plt.scatter(range(len(data)), data[:, ts_col], s=10, alpha=.5)
