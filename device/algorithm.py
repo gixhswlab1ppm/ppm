@@ -365,12 +365,19 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    file_path = dir_path[:-7] + '/data/1550349479_0.json'  # 1550349479_0
+    file_path = dir_path[:-7] + '/data/1550779409_0.json'  # 1550349479_0 
     data = np.array(json.load(open(file_path, 'r')))
 
     ts_col = 0
     mpu_cols = [1, 2, 3, 4, 5, 6]
     hit_cols = [7, 8, 9]
+
+    for hc in hit_cols:
+        plt.scatter(data[:, 0], data[:, hc], s=10, alpha=.5)
+    plt.show()
+    for mc in mpu_cols:
+        plt.plot(data[:,0], data[:, mc])
+        plt.show()
 
     training_set = list(get_dataset(data, ts_col, hit_cols, mpu_cols))
     X = [d[0] for d in training_set]
@@ -382,7 +389,7 @@ if __name__ == "__main__":
     X_test = [d[0] for d in test_set[:9]]
     y_test = [d[1] for d in test_set[:9]]
 
-    model = train_rnn(X, y, X_test, y_test)
+    # model = train_rnn(X, y, X_test, y_test)
 
     # check if data points are ordered & have consistent segments
     plt.scatter(range(len(data)), data[:, ts_col], s=10, alpha=.5)
@@ -391,13 +398,13 @@ if __name__ == "__main__":
     ts_clusters_by_feature = list(swing_count_svc(data, ts_col, mpu_cols))
     print(get_swing_count_from_ts_clusters_by_feature(ts_clusters_by_feature))
 
-    hit_result = hit_report_svc(data, ts_col, hit_cols)
-    indices = np.argwhere(np.abs(np.dot(hit_result, [[0], [1], [1]])) > 0)
+    # hit_result = hit_report_svc(data, ts_col, hit_cols)
+    # indices = np.argwhere(np.abs(np.dot(hit_result, [[0], [1], [1]])) > 0)
 
-    plt.scatter(hit_result[indices[:, 0], 1],
-                hit_result[indices[:, 0], 2], alpha=.5)
-    plt.plot([-1, 1, 0, -1], [0, 0, -math.sqrt(3), 0])
-    plt.show()
+    # plt.scatter(hit_result[indices[:, 0], 1],
+    #             hit_result[indices[:, 0], 2], alpha=.5)
+    # plt.plot([-1, 1, 0, -1], [0, 0, -math.sqrt(3), 0])
+    # plt.show()
 
     i = mpu_cols[1]
     plt.plot(data[:, ts_col], 130 + 10*(data[:, i+1] -

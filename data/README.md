@@ -10,3 +10,7 @@ No moving or hitting; test for zero offseting
 1550355620_0.json
 10 strong hits followed by 10 weak hits; all have full swings
 
+1550777636_0.json
+1550779409_0.json
+1550782152_0.json
+Milestone 2 Demo Day data; pizeo readings subject to severe offset 

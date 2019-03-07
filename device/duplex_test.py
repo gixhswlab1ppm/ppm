@@ -39,7 +39,7 @@ packet_dt = np.dtype([
     ('a1', np.int16),
     ('a2', np.int16)])  # must be wrapped as a tuple
 packet_fmt = '<Lffffffhhh'
-proc_buff_size = 1 << 11  # 50 dp/sec -> 40 sec
+proc_buff_size = 1 << 8  # 50 dp/sec -> 40 sec
 packet_ver = 1
 n_readers = 3
 
@@ -167,10 +167,14 @@ if __name__ == "__main__":
                 packet = tuple(struct.unpack_from(packet_fmt, res))
             else:
                 # print('reading sensor data')
-                res = str(dev.read_until())
-                res = res[res.find('['):res.find(']')+1]
-                res = ujson.decode(res)
-                packet = tuple(res)
+                try:
+                    res = str(dev.read_until())
+                    res = res[res.find('['):res.find(']')+1]
+                    res = ujson.decode(res)
+                    packet = tuple(res)
+                except:
+                    if debug:
+                        print('packet abandoned due to decode error')
 
             # data validation (no guarantee even if passed)
             if not len(packet) == len(packet_dt):
