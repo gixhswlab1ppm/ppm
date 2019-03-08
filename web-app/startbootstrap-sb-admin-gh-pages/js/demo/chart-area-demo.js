@@ -25,8 +25,6 @@ firebase.auth().onAuthStateChanged(function (user) {
     } else { }
 });
 
-var raw;
-
 var storage = firebase.storage();
 storageRef = storage.ref('');
 // console.log("1", storageRef);
@@ -41,7 +39,7 @@ function try_next_file() {
       var xhr = new XMLHttpRequest();
       xhr.responseType = 'json';
       // asynch stuff, this is basically our main
-      xhr.onload = function (event) {
+      xhr.onload = function () {
           // parse data once you've got it
           parse_data(xhr.response);
 
@@ -50,7 +48,7 @@ function try_next_file() {
             Math.ceil(impact.reduce(function(a, b) { return Math.max(a, b); }) / 8) * 8);
           // WIP
           bar_chart("impactBarChart", "Impact Strength", impact_bar, 0, 
-            Math.ceil(impact_bar["datasets"][0]["data"].reduce(function(a, b) { return Math.max(a+5, b+5); })));
+            Math.ceil(impact_bar.datasets[0].data.reduce(function(a, b) { return Math.max(a+5, b+5); })));
           // Call line_chart on acceleration data
           line_chart("accelerationChart", "Acceleration Speed", accel_x, 
             accel_x.reduce(function(a, b) { return Math.min(a, b); }), accel_x.reduce(function(a, b) { return Math.max(a, b); }));
@@ -62,7 +60,7 @@ function try_next_file() {
       console.log("error caught", error);
       // part of try_next_file code
       i--;
-      try_next_file()
+      try_next_file();
       // end of try_next_file code
       // Handle any errors
   });
@@ -78,7 +76,7 @@ Chart.defaults.global.defaultFontColor = '#292b2c';
 
 /* Function latest_file figures out the most recent file
    in the Firebase Storage which is active */
-function latest_file(storage) {
+function latest_file() {
   // see https://cloud.google.com/nodejs/docs/reference/storage/1.7.x/Bucket
   // and https://cloud.google.com/nodejs/docs/reference/storage/1.7.x/Bucket.html#getFiles
   // including require in HTML index file broke chart.js somehow
@@ -119,28 +117,39 @@ function parse_data(raw) {
       p_1: raw[i][7],
       p_2: raw[i][8],
       p_3: raw[i][9],
-    }
+    };
   }
   for (var key in data) {
     // console.log(data[key])
     // console.log(data[key]["time"])
     
     // Create a time-series array for x axis for time series
-    labels.push(data[key]["time"])
+    labels.push(data[key].time);
     
     /*  Calculate how hard the ball hit and 
         add it to an array for y axis */
-    scaled_impact = Math.log(data[key]["p_1"] + data[key]["p_1"] + data[key]["p_1"] / 3)
-    impact.push(Math.round((scaled_impact) * 100) / 100)
+    scaled_impact = Math.log(data[key].p_1 + data[key].p_1 + data[key].p_1 / 3);
+    impact.push(Math.round((scaled_impact) * 100) / 100);
     // average out bad data
     if (impact[impact.length - 2] == Number.NEGATIVE_INFINITY) {
-      impact[impact.length - 2] = (impact[impact.length - 1] + impact[impact.length - 3]) / 2
+      impact[impact.length - 2] = (impact[impact.length - 1] + impact[impact.length - 3]) / 2;
         // consecutive occurance of bad data gets set to 0
       if (impact[impact.length - 2] == Number.NEGATIVE_INFINITY) {
-        impact[impact.length - 2] = 0
+        impact[impact.length - 2] = 0;
       }
     }
 
+    // defines dict for strong/weak thresholds for bar chart
+    impact_bar = {
+      labels: ["Strong", "Weak"],
+      datasets: [{
+        label: "Data",
+        backgroundColor: "rgba(2,117,216,0.2)",
+        borderColor: "rgba(2,117,216,1)",
+        borderWidth: 1,
+        data: [0, 0]}]
+    };
+    
     // catch zeroes and negative infinities from final list
     for (var i = 0; i < impact.length; i++) {
       if (impact[i] == Number.NEGATIVE_INFINITY) {
@@ -149,28 +158,19 @@ function parse_data(raw) {
       else if (isNaN(impact[i])) {
         impact[i] = 0;
       }
+      // thresholding code to determine how many strong hits vs how many weak hits occur
+      if (impact[i] > 4) {
+        impact_bar.datasets[0].data[0] += 1;
+      }
+      else if (impact[i] > 2.8) {
+        impact_bar.datasets[0].data[1] += 1;
+      }
     }
 
     // Add basic data to array for printing
-    accel_x.push(Math.round((data[key]["a_x"]) * 1000) / 10)
+    accel_x.push(Math.round((data[key].a_x) * 1000) / 10);
   }
 
-  // defines dict for strong/weak thresholds for bar chart
-  impact_bar = {
-    labels: ["Strong", "Weak"],
-    datasets: [{
-      label: "Data",
-      backgroundColor: "rgba(2,117,216,0.2)",
-      borderColor: "rgba(2,117,216,1)",
-      borderWidth: 1,
-      data: [0, 0]}]
-  }
-
-  // thresholding code to determine how many strong hits vs how many weak hits occur
-  for (i = 0; i < impact.length; i++) {
-    if (impact[i] > 4) {impact_bar["datasets"][0]["data"][0] += 1;}
-    else if (impact[i] > 2.8) {impact_bar["datasets"][0]["data"][1] += 1;}
-  }
 }
 
 // console.log(labels)
@@ -216,7 +216,7 @@ function line_chart(chart_name, item_label, data, minScale, maxScale) {
           },
           ticks: {
             maxTicksLimit: 7,
-            callback: function(value, index, values) {
+            callback: function(value) {
               return (Math.round((value-labels[0]) * 100) / 100).toString() + 's';
             },
           }
