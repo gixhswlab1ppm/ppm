@@ -11,13 +11,13 @@ No moving or hitting; test for zero offseting
 10 strong hits followed by 10 weak hits; all have full swings
 
 1551918555_0.json
-M2+ Jason
+M2+ Jason, 8 swings, 8 hits
 
 1551925483_0.json
-M2+ James
+M2+ James, 16 swings, 16 hits
 
 1551926050_0.json
-M2+ Josh
+M2+ Josh, 17 swings, 16 hits
 
 1551926286_0.json
-M2+ Shine
+M2+ Shine, 15 swings,15 hits

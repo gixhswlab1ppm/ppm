@@ -13,6 +13,10 @@ dir_path = os.path.dirname(os.path.realpath(__file__))
 visualize = False
 debug = False
 
+ts_col = 0
+mpu_cols = [1, 2, 3, 4, 5, 6]
+hit_cols = [7, 8, 9]
+
 if visualize == True:
     import matplotlib.pyplot as plt
 
@@ -20,7 +24,7 @@ if visualize == True:
 
 
 # center must be (0,0)
-def triangulate_centroid(readings, circles=[[-math.sqrt(3)/2, 1/2], [math.sqrt(3)/2, 1/2], [0, -1]]):
+def triangulate_centroid(readings, circles=[[-1/2, -math.sqrt(3)/6], [0, 1./math.sqrt(3)], [1/2, -math.sqrt(3)/6]]):
 	"""
 	Given a 1x3 array of readings, and 3x2 array of circles
 	Returns the weighted centroid (1x2)
@@ -67,11 +71,11 @@ def clustering_dedup(maximas, seg_span=1500):  # maximas: timestamps
 
 
 def swing_count_svc(data, ts_col, feature_cols, pre_thresholds=[.3, .2, .34, 50, 30, 35]):
-    data = shift_mean(data, ts_col, feature_cols)
+    # data = shift_mean(data, ts_col, feature_cols)
     for i in range(0, len(feature_cols)):
         maxima_idx = np.array(argrelextrema(data[:, i+1], np.greater))[0]
-        # threshold = data[:, i+1].std()*0.6
-        threshold = pre_thresholds[i]
+        threshold = data[:, i+1].std()*0.6
+        # threshold = pre_thresholds[i]
 
         # threshold = threshold if threshold > 1 else 1
         maxima_idx_filtered = [
@@ -113,13 +117,19 @@ def get_hit_dispersity_temporal(hit_event):
 def get_hit_dispersity_spatial(hit_event):
     s_center = np.mean([triangulate_centroid(row)
                         for row in hit_event], axis=0)
+    # if debug & visualize:
+    #     centers = np.array([triangulate_centroid(row)
+    #                     for row in hit_event])
+    #     plt.scatter(centers[:, 0], centers[:, 1], alpha=.5)
+    #     plt.plot([-1/2, 1/2, 0, -1/2], [-math.sqrt(3)/6, -math.sqrt(3)/6, math.sqrt(3)/3, -math.sqrt(3)/6])
+    #     plt.show()
     return np.linalg.norm(s_center)
 
 
 def hit_report_svc(data, ts_col, hit_cols):
     valued_indices_mask = np.zeros(len(data), dtype=bool)
     for hc in hit_cols:
-        valued_indices_mask[np.argwhere(data[:, hc] > 0)] = True
+        valued_indices_mask[np.argwhere(data[:, hc] > 10)] = True
     if np.sum(valued_indices_mask) > 0:
         hit_events = clustering_dedup(
             data[np.argwhere(valued_indices_mask == True), 0], seg_span=1000)
@@ -144,7 +154,7 @@ def hit_report_svc(data, ts_col, hit_cols):
             # sum of max reading along each ts
             hit_strength[i] = np.min(
                 (1., np.sum(np.max(hit_event_with_ts[:, 1:], axis=0))/(1 << 9)))
-        return hit_dispersity_temporal, hit_dispersity_spatial, hit_strength
+        return hit_dispersity_temporal
     else:
         return [], [], []
 
@@ -153,10 +163,11 @@ def get_dataset(data, ts_col, Y_cols, X_cols):
     # X: mpu; Y: hit
     valued_indices_mask = np.zeros(len(data), dtype=bool)
     for hc in Y_cols:
-        valued_indices_mask[np.argwhere(data[:, hc] > 0)] = True
+        valued_indices_mask[np.argwhere(data[:, hc] > 10)] = True
     hit_events = clustering_dedup(
         data[np.argwhere(valued_indices_mask == True), 0], seg_span=1000)
     # take last element of each cluster as end of each swing window
+    dataset = []
     for event_ts in hit_events:
         window = [event_ts[0], event_ts[-1]]
 
@@ -175,17 +186,18 @@ def get_dataset(data, ts_col, Y_cols, X_cols):
         # sum of max reading along each ts
         hit_strength = np.min(
             (1., np.sum(np.max(hit_event_with_ts[:, 1:], axis=0))/(1 << 9)))
-        Y = [hit_dispersity_temporal, hit_dispersity_spatial, hit_strength]
+        Y = [hit_dispersity_temporal]
 
-        yield (X, Y, window)
+        dataset.append((X, Y, window))
         # In temporal space, X extends earlier than Y:
         # X - 1 2 3 4 5
         # Y - / / / 2 3
         # win - / / / T T
-
+    return dataset
 
 # win_len=0 for unwindowed fft, unit: millisec
-def fft_svc(data, ts_col, feature_cols, win_len=15000):
+def fft_svc(data, ts_col, feature_cols, win_len=0):
+    visualize = False
     def fft(y_temp, topk=.1, sample_rate=0.005):  # 5e-3s, 5ms):
         """
         Given a feature vector (1-D) sorted in time domain, this function performs a Fast DFT (real part only) and returns:
@@ -274,6 +286,8 @@ def fft_svc(data, ts_col, feature_cols, win_len=15000):
 
 
 def train_rnn(X, Y, X_test, Y_test):
+    n_labels = 1
+
     from sklearn.preprocessing import StandardScaler
     import tensorflow as tf
 
@@ -300,18 +314,18 @@ def train_rnn(X, Y, X_test, Y_test):
     # plt.show()
 
     input_X = tf.keras.layers.Input(shape=(16, 6))
-    lstm_0 = tf.keras.layers.LSTM(units=32, dropout=.2,
-                                  recurrent_dropout=.2)(input_X)
-    dense_0 = tf.keras.layers.Dense(32, activation='relu')(lstm_0)
-    dropout_0 = tf.keras.layers.Dropout(.5)(dense_0)
-    dense_1 = tf.keras.layers.Dense(32, activation='relu')(dropout_0)
-    dropout_1 = tf.keras.layers.Dropout(.5)(dense_1)
-    output_Y = tf.keras.layers.Dense(3, activation='sigmoid')(dropout_1)
-
+    r_0 = tf.keras.layers.SimpleRNN(24)(input_X)
+    dense_0 = tf.keras.layers.Dense(16, activation='elu', use_bias=False)(r_0)
+    bn_0 = tf.keras.layers.BatchNormalization()(dense_0)
+    dropout_0 = tf.keras.layers.Dropout(.5)(bn_0)
+    dense_1 = tf.keras.layers.Dense(8, activation='elu', use_bias=False)(dropout_0)
+    bn_1 = tf.keras.layers.BatchNormalization()(dense_1)
+    dropout_1 = tf.keras.layers.Dropout(.5)(bn_1)
+    output_Y = tf.keras.layers.Dense(n_labels, activation='sigmoid', use_bias=False)(dropout_1)
     model = tf.keras.models.Model(inputs=input_X, outputs=output_Y)
     print(model.summary())
 
-    model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mse'])
+    model.compile(optimizer='adam', loss='mean_absolute_error', metrics=['mse'])
 
     # TODO !impt scale by each feature X = StandardScaler().fit_transform(X)
     history = model.fit(X, [Y], epochs=1024,
@@ -319,7 +333,7 @@ def train_rnn(X, Y, X_test, Y_test):
     y_pred = model.predict(X)
     y_test_pred = model.predict(X_test)
 
-    for i in range(3):
+    for i in range(n_labels):
         y_err = np.abs(np.array(Y[:, i])-y_pred[:, i].reshape(len(Y[:, i])))
         y_test_err = np.abs(
             np.array(Y_test[:, i])-y_test_pred[:, i].reshape(len(Y_test[:, i])))
@@ -328,12 +342,12 @@ def train_rnn(X, Y, X_test, Y_test):
         print('>>> ', i, '-th label')
         print('training set err mean: {0:.4f}, 25-quant: {1:.4f}, 50-quant: {2:.4f}, 75-quant: {3:.4f}'.format(np.mean(
             y_err), np.quantile(y_err, 0.25), np.quantile(y_err, 0.50), np.quantile(y_err, 0.75)))
-        print('training set err rate mean: {0:.4f}%, 25-quant: {1:.4f}%, 50-quant: {2:.4f}%, 75-quant: {3:.4f}%'.format(100*np.mean(
-            y_err_rate), 100*np.quantile(y_err_rate, 0.25), 100*np.quantile(y_err_rate, 0.50), 100*np.quantile(y_err_rate, 0.75)))
+        # print('training set err rate mean: {0:.4f}%, 25-quant: {1:.4f}%, 50-quant: {2:.4f}%, 75-quant: {3:.4f}%'.format(100*np.mean(
+        #     y_err_rate), 100*np.quantile(y_err_rate, 0.25), 100*np.quantile(y_err_rate, 0.50), 100*np.quantile(y_err_rate, 0.75)))
         print('test set err mean: {0:.4f}, 25-quant: {1:.4f}, 50-quant: {2:.4f}, 75-quant: {3:.4f}'.format(np.mean(y_test_err),
                                                                                                np.quantile(y_test_err, 0.25), np.quantile(y_test_err, 0.50), np.quantile(y_test_err, 0.75)))
-        print('test set err rate mean: {0:.4f}%, 25-quant: {1:.4f}%, 50-quant: {2:.4f}%, 75-quant: {3:.4f}%'.format(100*np.mean(y_test_err_rate),
-                                                                                                    100*np.quantile(y_test_err_rate, 0.25), 100*np.quantile(y_test_err_rate, 0.50), 100*np.quantile(y_test_err_rate, 0.75)))
+        # print('test set err rate mean: {0:.4f}%, 25-quant: {1:.4f}%, 50-quant: {2:.4f}%, 75-quant: {3:.4f}%'.format(100*np.mean(y_test_err_rate),
+        #                                                                                             100*np.quantile(y_test_err_rate, 0.25), 100*np.quantile(y_test_err_rate, 0.50), 100*np.quantile(y_test_err_rate, 0.75)))
         plt.figure(0)
         plt.plot(np.sort(y_err_rate), label='d_y')
         plt.plot(np.sort(y_test_err_rate), label='d_y_test')
@@ -346,99 +360,100 @@ def train_rnn(X, Y, X_test, Y_test):
         plt.legend(loc='upper right')
 
         plt.figure(2)
-        plt.plot(Y[:, i], label='y')
-        plt.plot(y_pred[:, i], label='y_pred')
+        args = np.argsort(Y[:,i])
+        plt.plot(Y[:, i][args], label='y')
+        plt.plot(y_pred[:, i][args], label='y_pred')
+        plt.ylim([0, 1])
         plt.legend(loc='upper right')
 
         plt.figure(3)
-        plt.plot(Y_test[:, i], label='y_test')
-        plt.plot(y_test_pred[:, i], label='y_test_pred')
+        args = np.argsort(Y_test[:,i])
+        plt.plot(Y_test[:, i][args], label='y_test')
+        plt.plot(y_test_pred[:, i][args], label='y_test_pred')
+        plt.ylim([0, 1])
         plt.legend(loc='upper right')
         plt.show()
 
     return model
 
-
-if __name__ == "__main__":
+def extract_raw_data(file_name):
     import os
     import json
-    import matplotlib.pyplot as plt
-
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    file_path = dir_path[:-7] + '/data/1551925483_0.json'  # 1550349479_0
+    file_path = dir_path[:-7] + '/data/' + file_name
     data = np.array(json.load(open(file_path, 'r')))
+    data[:, mpu_cols[3:]] /= 512.
+    # if visualize:
+    #     for h in hit_cols:
+    #         plt.scatter(data[:, 0], np.ones(len(data)), alpha=.5, s=data[:, h], label=h)
+    #     plt.legend(loc='upper right')
+    #     plt.show()
+    #     for h in hit_cols:
+    #         plt.scatter(data[:, 0], data[:, h], alpha=.5, label=h)
+    #     plt.legend(loc='upper right')
+    #     plt.show()
+    #     # for m in mpu_cols:
+    #     #     plt.plot(data[:, m])
+    #     #     plt.show()
+    return data
 
-    ts_col = 0
-    mpu_cols = [1, 2, 3, 4, 5, 6]
-    hit_cols = [7, 8, 9]
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+    
 
-    for h in hit_cols:
-        plt.scatter(data[:, 0], np.ones(len(data)), alpha=.5, s=data[:, h], label=h)
-    plt.legend(loc='upper right')
-    plt.show()
-    for h in hit_cols:
-        plt.scatter(data[:, 0], data[:, h], alpha=.5, label=h)
-    plt.legend(loc='upper right')
-    plt.show()
-    for m in mpu_cols:
-        plt.plot(data[:, m])
-        plt.show()
+    train_data_list = ['1551918555_0.json', '1551926050_0.json', '1551926286_0.json']
+    data_collection = [extract_raw_data(td) for td in train_data_list]
+    train_data = np.vstack([get_dataset(d, ts_col, hit_cols, mpu_cols) for d in data_collection])
+    test_data = get_dataset(extract_raw_data('1551925483_0.json'), ts_col, hit_cols, mpu_cols)
 
 
-
-    training_set = list(get_dataset(data, ts_col, hit_cols, mpu_cols))
+    training_set = list(train_data)
     X = [d[0] for d in training_set]
     y = [d[1] for d in training_set]
 
-    test_set = list(get_dataset(np.array(json.load(open(
-        dir_path[:-7] + '/data/1550355620_0.json', 'r'))), ts_col, hit_cols, mpu_cols))
-    # test_set = list(extract_features_vs_hit_data(data[400:800], ts_col, hit_cols, mpu_cols))
-    X_test = [d[0] for d in test_set[:9]]
-    y_test = [d[1] for d in test_set[:9]]
+    test_set = list(test_data)
+    X_test = [d[0] for d in test_set]
+    y_test = [d[1] for d in test_set]
 
-    # model = train_rnn(X, y, X_test, y_test)
+    model = train_rnn(X, y, X_test, y_test)
 
-    # check if data points are ordered & have consistent segments
-    plt.scatter(range(len(data)), data[:, ts_col], s=10, alpha=.5)
-    plt.show()
+    for data in data_collection:
+        # check if data points are ordered & have consistent segments
+        plt.scatter(range(len(data)), data[:, ts_col], s=10, alpha=.5)
+        plt.show()
 
-    ts_clusters_by_feature = list(swing_count_svc(data, ts_col, mpu_cols))
-    print(get_swing_count_from_ts_clusters_by_feature(ts_clusters_by_feature))
+        ts_clusters_by_feature = list(swing_count_svc(data, ts_col, mpu_cols))
+        print(get_swing_count_from_ts_clusters_by_feature(ts_clusters_by_feature))
 
-    # hit_result = hit_report_svc(data, ts_col, hit_cols)
-    # indices = np.argwhere(np.abs(np.dot(hit_result, [[0], [1], [1]])) > 0)
+        hit_dispersity_temporal, hit_dispersity_spatial, hit_strength = hit_report_svc(data, ts_col, hit_cols)
 
-    # plt.scatter(hit_result[indices[:, 0], 1],
-    #             hit_result[indices[:, 0], 2], alpha=.5)
-    # plt.plot([-1, 1, 0, -1], [0, 0, -math.sqrt(3), 0])
-    # plt.show()
 
-    i = mpu_cols[1]
-    plt.plot(data[:, ts_col], 130 + 10*(data[:, i+1] -
-                                        data[:, i+1].mean())/data[:, i+1].std())
-    for h in hit_cols:
-        plt.scatter(data[:, ts_col], data[:, h], alpha=.5, label=h)
-    for idx, clusters in enumerate(ts_clusters_by_feature):
-        plt.scatter([np.mean(c) for c in clusters], (10*idx + 100) *
-                    np.ones(len(clusters)), s=50, alpha=.2, label=mpu_cols[idx])
-    plt.legend(loc='upper right')
-    plt.show()
+        i = mpu_cols[1]
+        plt.plot(data[:, ts_col], 130 + 10*(data[:, i+1] -
+                                            data[:, i+1].mean())/data[:, i+1].std())
+        for h in hit_cols:
+            plt.scatter(data[:, ts_col], data[:, h], alpha=.5, label=h)
+        for idx, clusters in enumerate(ts_clusters_by_feature):
+            plt.scatter([np.mean(c) for c in clusters], (10*idx + 100) *
+                        np.ones(len(clusters)), s=50, alpha=.2, label=mpu_cols[idx])
+        plt.legend(loc='upper right')
+        plt.show()
 
-    # hit-point viz & correlation w/ swing counts
-    for h in hit_cols:
-        x = np.zeros(len(data), dtype=bool)
-        x[np.argwhere(data[:, h] > 0)] = True
-        plt.scatter(data[:, ts_col], x, alpha=.5, label=h, s=data[:, h])
+        # hit-point viz & correlation w/ swing counts
+        for h in hit_cols:
+            x = np.zeros(len(data), dtype=bool)
+            x[np.argwhere(data[:, h] > 0)] = True
+            plt.scatter(data[:, ts_col], x, alpha=.5, label=h, s=data[:, h])
 
-    ts_centers_by_feature = get_swing_centers_from_ts_cluster_by_feature(
-        ts_clusters_by_feature)
-    for i, centers in enumerate(ts_centers_by_feature):
-        plt.scatter(centers, 1+0.1*np.ones(len(centers)), alpha=.5, s=20+10*i)
+        ts_centers_by_feature = get_swing_centers_from_ts_cluster_by_feature(
+            ts_clusters_by_feature)
+        for i, centers in enumerate(ts_centers_by_feature):
+            plt.scatter(centers, 1+0.1*np.ones(len(centers)), alpha=.5, s=20+10*i)
 
-    plt.legend(loc='upper right')
-    plt.show()
+        plt.legend(loc='upper right')
+        plt.show()
 
-    fft_result, swing_freq = list(fft_svc(data, ts_col, mpu_cols))
-    print(swing_freq)
+        fft_result, swing_freq = list(fft_svc(data, ts_col, mpu_cols, ))
+        print(swing_freq)
 
     pass
