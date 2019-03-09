@@ -6,7 +6,6 @@ dev_button = True  # true if the start/end physical button is available
 dev_display = True  # true if e-ink display is available
 dev_pi = True  # true if computing is on pi w/ flat folder structure
 
-user_id = 0  # 0-4
 ui_state = 0  # 0: Keep Flat, 1: User Profile, 2: Keep Swinging, 3: Running, 4: Paused
 
 import threading
@@ -24,9 +23,6 @@ if dev_arduino:
     dev = serial.Serial('/dev/serial0', 9600)
 
 import time
-
-
-import ujson
 import numpy as np
 import circular_buffer
 from algorithm import swing_count_svc, hit_report_svc, fft_svc, get_swing_count_from_ts_clusters_by_feature
@@ -45,7 +41,7 @@ packet_dt = np.dtype([
 packet_fmt = '<Lffffffhhh'
 proc_buff_size = 1 << 8  # 50 dp/sec -> 40 sec
 packet_ver = 1
-n_readers = 3
+n_readers = 4
 
 is_alive = False  # arduino data handling switch
 
@@ -53,8 +49,34 @@ is_alive = False  # arduino data handling switch
 proc_buf = circular_buffer.circular_buffer(
     proc_buff_size, n_readers, packet_dt, storage_remote)
 
-# TODO adaptive sleep policy (upon None | hasData)
+import json
 
+class profile_manager:
+    fields = ["id", "th"]
+    def __init__(self):
+        self.profiles = json.load(open('profile.json', 'r'))
+    def _get_index(self, _id):
+        return [i for i,p in enumerate(self.profiles) if p["id"] == _id][0]
+    def update_id(self, _id):
+        self.profile_id = _id
+    def update(self, profile):
+        self.profiles[self._get_index(self.profile_id)] = profile
+        json.dump(self.profiles, open('profile.json', 'w'))
+    def update_field(self, field, val):
+        profile = self.profiles[self._get_index(self.profile_id)]
+        profile[field] = val
+        self.update(profile)
+    def get_field(self, field):
+        if field in self.profiles[self._get_index(self.profile_id)]:
+            return self.profiles[self._get_index(self.profile_id)][field]
+        else:
+            return None
+    def get_id(self):
+        return self.profile_id
+    def get_len(self):
+        return 5
+
+profile = profile_manager()
 
 def swing_counter():
     time.sleep(5)
@@ -62,15 +84,18 @@ def swing_counter():
         swing_sum = 0
     while True:
         # based on observation of 15 packet/sec
-        chunk = proc_buf.try_read(0, 50)
+        chunk = proc_buf.try_read(0, 20)
         if chunk is None:
             # long sleep until data ready
             time.sleep(5 if not is_alive else .5)
             continue
-        ts_clusters_by_feature = list(swing_count_svc(np.array(chunk.tolist()).reshape(
-            len(chunk), len(packet_dt)), 0, [1, 2, 3, 4, 5, 6]))
+        cluster_ts_per_feature, _ = swing_count_svc(
+            np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)),
+            0,
+            [1, 2, 3, 4, 5, 6],
+            profile.get_field("th"))
         swing_count = get_swing_count_from_ts_clusters_by_feature(
-            ts_clusters_by_feature)
+            cluster_ts_per_feature)
         if debug:
             print('swing counter result available')
         if dev_display:
@@ -137,7 +162,7 @@ def user_input_handler():  # when not alive, worker thread will still run till d
     if debug:
         print('worker threads started')
     # 0: Keep Flat, 1: User Profile, 2: Keep Swinging, 3: Running, 4: Paused
-    
+
     def end():
         if debug:
             print('activity ends')
@@ -160,11 +185,54 @@ def user_input_handler():  # when not alive, worker thread will still run till d
         button.when_pressed = start
 
 
-threading.Thread(target=user_input_handler).start()
+def ui_1_button_pressed_handler():
+    profile.update_id((profile.get_id() + 1)%profile.get_len())
+    threading.Thread(target=display.render_profile_screen,
+                     args=(profile.get_id(),)).start()
 
+
+def on_navigate_to_profile_screen():
+    global ui_state
+    ui_state = 1
+    threading.Thread(target=display.render_profile_screen).start()
+    profile_start_time = time.time()
+    if dev_button:
+        button.when_pressed = ui_1_button_pressed_handler
+    while time.time() - profile_start_time < 5:
+        time.sleep(.1)
+    if dev_button:
+        button.when_pressed = None
+
+def on_navigate_to_train_screen():
+    global ui_state
+    ui_state = 2
+    threading.Thread(target=display.render_train_screen).start()
+    chunk = None
+    while True:
+        chunk = proc_buf.try_read(0, 80)
+        if chunk is None:
+            time.sleep(2)
+
+    _, curr_thresholds = swing_count_svc(
+        np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)),
+        0,
+        [1, 2, 3, 4, 5, 6])
+    profile.update_field("th", curr_thresholds)
+
+def on_navigate_to_run_screen():
+    global ui_state
+    ui_state = 3
+    threading.Thread(target=display.render_run_screen).start()
 
 if __name__ == "__main__":
+    on_navigate_to_profile_screen()
+    th = profile.get_field("th")
+    if th is None:
+        on_navigate_to_train_screen()
+    on_navigate_to_run_screen()
+
     if dev_arduino:
+        import ujson
         while True:
             if not is_alive:
                 if debug:
@@ -210,9 +278,7 @@ if __name__ == "__main__":
                 time.sleep(d)
             if debug:
                 print('simulation ends')
-        import os
-        import json
-        dir_path = os.path.dirname(os.path.realpath(__file__))
+
         if dev_pi:
             file_path = dir_path + '/1550355620_0.json'
         else:

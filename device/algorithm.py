@@ -70,29 +70,34 @@ def clustering_dedup(maximas, seg_span=1500):  # maximas: timestamps
         return segs
 
 
-def swing_count_svc(data, ts_col, feature_cols, pre_thresholds=[.3, .2, .34, 50, 30, 35]):
+def swing_count_svc(data, ts_col, feature_cols, pre_thresholds=None): # =[.3, .2, .34, 50, 30, 35]
     # data = shift_mean(data, ts_col, feature_cols)
+    cluster_ts_per_feature = []
+    curr_thresholds = np.ndarray((len(feature_cols)))
     for i in range(0, len(feature_cols)):
         maxima_idx = np.array(argrelextrema(data[:, i+1], np.greater))[0]
-        threshold = data[:, i+1].std()*0.6
-        # threshold = pre_thresholds[i]
+        curr_thresholds[i] = data[:, i+1].std()*0.6
+        if pre_thresholds is None:
+            threshold = curr_thresholds[i]
+        else:
+            threshold = pre_thresholds[i]
 
-        # threshold = threshold if threshold > 1 else 1
         maxima_idx_filtered = [
             m_i for m_i in maxima_idx if data[m_i, i+1] > threshold]
         if len(maxima_idx_filtered) > 0:
-            ts_clusters_by_feature = clustering_dedup(
+            cluster_ts = clustering_dedup(
                 data[maxima_idx_filtered, 0], seg_span=1500)
             if visualize:
                 plt.scatter(data[maxima_idx_filtered, 0],
                             data[maxima_idx_filtered, i+1], s=20, alpha=.5)
-                plt.scatter([np.mean(tsd) for tsd in ts_clusters_by_feature], data[:,
-                                                                                   i+1].std() * np.ones(len(ts_clusters_by_feature)), s=40, alpha=.5)
+                plt.scatter([np.mean(tsd) for tsd in cluster_ts], data[:,
+                                                                                   i+1].std() * np.ones(len(cluster_ts)), s=40, alpha=.5)
                 plt.plot(data[:, 0], data[:, i+1])
                 plt.show()
-            yield ts_clusters_by_feature
+            cluster_ts_per_feature.append(cluster_ts)
         else:
-            yield []
+            cluster_ts_per_feature.append([])
+    return cluster_ts_per_feature, curr_thresholds
 
 
 def get_swing_count_from_ts_clusters_by_feature(ts_clusters_by_feature):
