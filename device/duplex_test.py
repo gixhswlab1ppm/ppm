@@ -1,31 +1,35 @@
-import serial
-import time
-import struct
+debug = True  # true if output more debug info to console
+storage_remote = False
+
+dev_arduino = True  # false if data is collected from arduino in real time
+dev_button = True  # true if the start/end physical button is available
+dev_display = True  # true if e-ink display is available
+dev_pi = True  # true if computing is on pi w/ flat folder structure
+
+user_id = 0  # 0-4
+ui_state = 0  # 0: Keep Flat, 1: User Profile, 2: Keep Swinging, 3: Running, 4: Paused
+
 import threading
-import ujson
-import collections
-import numpy as np
-import math
-import os
-import circular_buffer
-from algorithm import swing_count_svc, hit_report_svc, fft_svc, get_swing_count_from_ts_clusters_by_feature
-
-debug = True # true if output more debug info to console
-
-dev_arduino = True # false if data is collected from arduino in real time
-dev_button = True # true if the start/end physical button is available
-dev_display = True # true if e-ink display is available
-dev_pi = True
+if dev_display:
+    import display
+    threading.Thread(target=display.render_welcome_screen).start()
 
 if dev_button:
     from gpiozero import Button
     button = Button(7)
 
-if dev_display:
-    from display import update_display_partial
-
 if dev_arduino:
-    dev = serial.Serial('/dev/serial0', 9600)  # 15200, ttyACM0, ttyUSB0, serial0
+    # 15200, ttyACM0, ttyUSB0, serial0
+    import serial
+    dev = serial.Serial('/dev/serial0', 9600)
+
+import time
+
+
+import ujson
+import numpy as np
+import circular_buffer
+from algorithm import swing_count_svc, hit_report_svc, fft_svc, get_swing_count_from_ts_clusters_by_feature
 
 packet_dt = np.dtype([
     ('ts', np.uint32),
@@ -43,11 +47,11 @@ proc_buff_size = 1 << 8  # 50 dp/sec -> 40 sec
 packet_ver = 1
 n_readers = 3
 
-is_alive = False # arduino data handling switch
+is_alive = False  # arduino data handling switch
 
 # assumption must hold true: data arrives *continuously*
 proc_buf = circular_buffer.circular_buffer(
-    proc_buff_size, n_readers, packet_dt)
+    proc_buff_size, n_readers, packet_dt, storage_remote)
 
 # TODO adaptive sleep policy (upon None | hasData)
 
@@ -60,15 +64,18 @@ def swing_counter():
         # based on observation of 15 packet/sec
         chunk = proc_buf.try_read(0, 50)
         if chunk is None:
-            time.sleep(5 if not is_alive else .5)  # long sleep until data ready
+            # long sleep until data ready
+            time.sleep(5 if not is_alive else .5)
             continue
-        ts_clusters_by_feature = list(swing_count_svc(np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)), 0, [1, 2, 3, 4, 5, 6]))
-        swing_count = get_swing_count_from_ts_clusters_by_feature(ts_clusters_by_feature)
+        ts_clusters_by_feature = list(swing_count_svc(np.array(chunk.tolist()).reshape(
+            len(chunk), len(packet_dt)), 0, [1, 2, 3, 4, 5, 6]))
+        swing_count = get_swing_count_from_ts_clusters_by_feature(
+            ts_clusters_by_feature)
         if debug:
             print('swing counter result available')
         if dev_display:
             swing_sum += swing_count
-            update_display_partial(0, swing_sum) # TODO async?
+            display.update_display_partial(0, swing_sum)  # TODO async?
 
 
 def hit_reporter():
@@ -79,33 +86,37 @@ def hit_reporter():
         ds_avg = 0
         st_avg = 0
     while True:
-        chunk = proc_buf.try_read(1, 30)  # approx. per sec
+        chunk = proc_buf.try_read(1, 1 << 4)  # approx. per 2 sec
         if chunk is None:
             time.sleep(5 if not is_alive else .1)
             continue
-        h_dt, h_ds, h_st = hit_report_svc(np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)), 0, [7, 8, 9])
+        h_dt, h_st, h_events = hit_report_svc(
+            np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)), 0, [7, 8, 9])
         if debug:
             print('hit detector result available')
         if dev_display:
             dt_avg = 0.8*dt_avg + 0.2*h_dt
-            ds_avg = 0.8*ds_avg + 0.2*h_ds
             st_avg = 0.8*st_avg + 0.2*h_st
             count_delta = len(h_dt)
             if count_delta > 0:
                 count_sum += count_delta
-                update_display_partial(1, count_sum)
-                update_display_partial(2, int(100 * dt_avg))
-                update_display_partial(3, int(100 * st_avg)) 
+                display.update_display_partial(1, count_sum)
+                display.update_display_partial(2, int(100 * dt_avg))
+                display.update_display_partial(3, int(100 * st_avg))
 
 
 def fft_near_realtime():
     time.sleep(5)
     while True:
-        chunk = proc_buf.try_read(2, 1 << 7)  # ~12sec
+        # rolling basis: 128 + (new) 32 data ~ 13 + (new) 3 sec
+        if proc_buf.get_len(2) < 1 << 7:
+            time.sleep(5)
+        chunk = proc_buf.try_read(2, 1 << 5)
         if chunk is None:
             time.sleep(5 if not is_alive else 5)
             continue
-        result = fft_svc(np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)), 0, [1, 2, 3, 4, 5, 6], win_len=0)
+        result = fft_svc(np.array(chunk.tolist()).reshape(
+            len(chunk), len(packet_dt)), 0, [1, 2, 3, 4, 5, 6], win_len=0)
         if debug:
             print('fft_nrt result available')
 
@@ -115,7 +126,7 @@ def fft_near_realtime():
 #     sensor_data = ujson.load(open(file_name, 'r'))
 #     rpi_rt_pipeline.rt_process_file(sensor_data)
 
-def user_input_handler(): # when not alive, worker thread will still run till data processed
+def user_input_handler():  # when not alive, worker thread will still run till data processed
     worker_threads = [
         threading.Thread(target=swing_counter),
         threading.Thread(target=hit_reporter),
@@ -125,6 +136,8 @@ def user_input_handler(): # when not alive, worker thread will still run till da
         th.start()
     if debug:
         print('worker threads started')
+    # 0: Keep Flat, 1: User Profile, 2: Keep Swinging, 3: Running, 4: Paused
+    
     def end():
         if debug:
             print('activity ends')
@@ -132,6 +145,7 @@ def user_input_handler(): # when not alive, worker thread will still run till da
         is_alive = False
         if dev_button:
             button.when_pressed = start
+
     def start():
         if debug:
             print('activity starts')
@@ -148,7 +162,7 @@ def user_input_handler(): # when not alive, worker thread will still run till da
 
 threading.Thread(target=user_input_handler).start()
 
-    
+
 if __name__ == "__main__":
     if dev_arduino:
         while True:
@@ -160,6 +174,7 @@ if __name__ == "__main__":
 
             packet = None
             if packet_ver < 1:
+                import struct
                 dev.read_until('!'.encode())
                 res = dev.read_until('@'.encode())
                 if not len(res) == (1 + packet_dt.itemsize):
@@ -184,12 +199,13 @@ if __name__ == "__main__":
     else:
         if debug:
             print('simulation starts')
+
         def run_simulate(data):
             time.sleep(1.5)
             global is_alive
             is_alive = True
             delays = .05 + np.random.rand(len(data))/10
-            for i,d in enumerate(delays):
+            for i, d in enumerate(delays):
                 proc_buf.write_one(data[i])
                 time.sleep(d)
             if debug:
@@ -206,5 +222,3 @@ if __name__ == "__main__":
         threading.Thread(target=run_simulate, args=(data,)).start()
         while True:
             time.sleep(10)
-
-
