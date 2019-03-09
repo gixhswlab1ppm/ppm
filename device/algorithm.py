@@ -8,8 +8,8 @@ import os
 from scipy import stats
 dir_path = os.path.dirname(os.path.realpath(__file__))
 
-visualize = True
-debug = True
+visualize = False
+debug = False
 
 hit_th = 10
 hit_cluster_size = 1000
@@ -90,8 +90,7 @@ def swing_count_svc(data, ts_col, feature_cols, pre_thresholds=None): # =[.3, .2
             if visualize:
                 plt.scatter(data[maxima_idx_filtered, 0],
                             data[maxima_idx_filtered, i+1], s=20, alpha=.5)
-                plt.scatter([np.mean(tsd) for tsd in cluster_ts], data[:,
-                                                                                   i+1].std() * np.ones(len(cluster_ts)), s=40, alpha=.5)
+                plt.scatter([np.mean(tsd) for tsd in cluster_ts], pre_thresholds[i] * np.ones(len(cluster_ts)), s=40, alpha=.5)
                 plt.plot(data[:, 0], data[:, i+1])
                 plt.show()
             cluster_ts_per_feature.append(cluster_ts)
@@ -405,7 +404,7 @@ def extract_raw_data(file_name):
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     
-    train_data_list = ['1552089912_0.json']
+    train_data_list = ['1551925483_0.json']
     #train_data_list = ['1551918555_0.json', '1551926050_0.json', '1551926286_0.json']
     data_collection = [extract_raw_data(td) for td in train_data_list]
     train_data = np.vstack([get_dataset(d, ts_col, hit_cols, mpu_cols) for d in data_collection])

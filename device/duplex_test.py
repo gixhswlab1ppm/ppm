@@ -72,7 +72,7 @@ def swing_counter():
         chunk = proc_buf.try_read(0, 20)
         if chunk is None:
             # long sleep until data ready
-            time.sleep(5 if is_paused else .5)
+            time.sleep(5 if is_paused else 1)
             continue
         cluster_ts_per_feature, _ = swing_count_svc(
             np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)),
@@ -83,8 +83,8 @@ def swing_counter():
             cluster_ts_per_feature)
         if debug:
             print('swing counter result available')
+        swing_sum += swing_count
         if dev_display:
-            swing_sum += swing_count
             display.update_display_partial(0, swing_sum)  # TODO async?
 
 
@@ -98,7 +98,7 @@ def hit_reporter():
     while True:
         chunk = proc_buf.try_read(1, 1 << 4)  # approx. per 2 sec
         if chunk is None:
-            time.sleep(5 if is_paused else .1)
+            time.sleep(5 if is_paused else 1)
             continue
         h_dt, h_st, h_events = hit_report_svc(
             np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)), 0, [7, 8, 9])
@@ -160,17 +160,20 @@ def on_navigate_to_train_screen():
     ui_state = 2
     if dev_display:
         threading.Thread(target=display.render_train_screen).start()
+    time.sleep(4) # skip some in case user starts late
     chunk = None
     while True:
         chunk = proc_buf.try_read(0, 80)
         if chunk is None:
             time.sleep(2)
+        else:
+            break
 
     _, curr_thresholds = swing_count_svc(
         np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)),
         0,
         [1, 2, 3, 4, 5, 6])
-    profile.update_field("th", curr_thresholds)
+    profile.update_field("th", curr_thresholds.tolist())
     if debug:
         print('learned thresholds', curr_thresholds)
 
@@ -207,13 +210,14 @@ if __name__ == "__main__":
 
         def run_simulate(data):
             delays = .05 + np.random.rand(len(data))/10
+            delays /= 10.
             for i, d in enumerate(delays):
                 proc_buf.write_one(data[i])
                 time.sleep(d)
             if debug:
                 print('simulation ends')
 
-        data = json.load(open(file_path + '1550355620_0.json', 'r'))
+        data = json.load(open(file_path + '1551925483_0.json', 'r'))
         data = np.array([tuple(s) for s in data], dtype=packet_dt)
         threading.Thread(target=run_simulate, args=(data,)).start()
 
