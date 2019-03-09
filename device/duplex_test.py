@@ -1,12 +1,12 @@
 debug = True  # true if output more debug info to console
-simulate = False
+simulate = True
 
 storage_remote = False
 
-dev_arduino = True  # false if data is collected from arduino in real time
-dev_button = True  # true if the start/end physical button is available
-dev_display = True  # true if e-ink display is available
-dev_pi = True  # true if computing is on pi w/ flat folder structure
+dev_arduino = False  # false if data is collected from arduino in real time
+dev_button = False # true if the start/end physical button is available
+dev_display = False  # true if e-ink display is available
+dev_pi = False  # true if computing is on pi w/ flat folder structure
 
 import threading
 if dev_display:
@@ -54,7 +54,13 @@ import json
 
 
 import profile_manager 
-profile = profile_manager.profile_manager()
+import os
+dir_path = os.path.dirname(os.path.realpath(__file__))
+if dev_pi:
+    file_path = dir_path + '/'
+else:
+    file_path = dir_path[:-7] + '/data/'
+profile = profile_manager.profile_manager(file_path + 'profile.json')
 
 
 def swing_counter():
@@ -136,7 +142,8 @@ def on_navigate_to_profile_screen():
 
     global ui_state
     ui_state = 1
-    threading.Thread(target=display.render_profile_screen).start()
+    if dev_display:
+        threading.Thread(target=display.render_profile_screen).start()
     profile_start_time = time.time()
     if dev_button:
         button.when_pressed = profile_screen_button_handler
@@ -151,7 +158,8 @@ def on_navigate_to_train_screen():
         print('on_navigate_to_train_screen')
     global ui_state
     ui_state = 2
-    threading.Thread(target=display.render_train_screen).start()
+    if dev_display:
+        threading.Thread(target=display.render_train_screen).start()
     chunk = None
     while True:
         chunk = proc_buf.try_read(0, 80)
@@ -182,7 +190,8 @@ def on_navigate_to_run_screen():
     worker_threads = [swing_counter, hit_reporter]
     for th in worker_threads:
         threading.Thread(target=th).start()
-    threading.Thread(target=display.render_run_screen).start()
+    if dev_display:
+        threading.Thread(target=display.render_run_screen).start()
     if dev_button:
         button.when_pressed = run_screen_button_handler
 
@@ -204,13 +213,7 @@ if __name__ == "__main__":
             if debug:
                 print('simulation ends')
 
-        import os
-        dir_path = os.path.dirname(os.path.realpath(__file__))
-        if dev_pi:
-            file_path = dir_path + '/1550355620_0.json'
-        else:
-            file_path = dir_path[:-7] + '/data/1550355620_0.json'
-        data = json.load(open(file_path, 'r'))
+        data = json.load(open(file_path + '1550355620_0.json', 'r'))
         data = np.array([tuple(s) for s in data], dtype=packet_dt)
         threading.Thread(target=run_simulate, args=(data,)).start()
 

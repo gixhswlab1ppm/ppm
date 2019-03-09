@@ -5,8 +5,6 @@ import math
 import json
 
 debug = True
-storage = True
-
 
 storage_svc = None
 storage_user = None
@@ -39,7 +37,7 @@ class circular_buffer():
     - Data invalidated upon successful read for each reader
     - Bulk write/read
     - Thread safety
-    - Per-epoch dumping
+    - Per-epoch dump to local/remote
     - Custom datatype
     '''
     def __init__(self, max_len, n_readers, dtype, storage_remote): 
