@@ -21,3 +21,6 @@ M2+ Josh, 17 swings, 16 hits
 
 1551926286_0.json
 M2+ Shine, 15 swings,15 hits
+
+1552089912_0.json
+M2+ Chris, 7 swings, 7 hits

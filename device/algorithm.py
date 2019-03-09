@@ -1,18 +1,18 @@
 import numpy as np
-from scipy import signal
 import math
 from collections import Counter
 from scipy import stats
 from scipy.signal import argrelextrema
 import ujson
 import os
-import math
 from scipy import stats
 dir_path = os.path.dirname(os.path.realpath(__file__))
 
-visualize = False
-debug = False
+visualize = True
+debug = True
 
+hit_th = 10
+hit_cluster_size = 1000
 ts_col = 0
 mpu_cols = [1, 2, 3, 4, 5, 6]
 hit_cols = [7, 8, 9]
@@ -129,17 +129,17 @@ def get_hit_dispersity_spatial(hit_event):
 def hit_report_svc(data, ts_col, hit_cols):
     valued_indices_mask = np.zeros(len(data), dtype=bool)
     for hc in hit_cols:
-        valued_indices_mask[np.argwhere(data[:, hc] > 10)] = True
+        valued_indices_mask[np.argwhere(data[:, hc] > hit_th)] = True
     if np.sum(valued_indices_mask) > 0:
         hit_events = clustering_dedup(
-            data[np.argwhere(valued_indices_mask == True), 0], seg_span=1000)
+            data[np.argwhere(valued_indices_mask == True), 0], seg_span=hit_cluster_size)
         n_event = len(hit_events)
         # features per "hit event"
 
         hit_dispersity_temporal = np.empty(
             n_event, dtype=float)  # bound by hit event length
-        hit_dispersity_spatial = np.empty(
-            n_event, dtype=float)  # bound by hit triangle size
+        # hit_dispersity_spatial = np.empty(
+        #     n_event, dtype=float)  # bound by hit triangle size
         hit_strength = np.empty(n_event, dtype=float)  # bound by hit reading
 
         for i, event_ts in enumerate(hit_events):
@@ -149,12 +149,12 @@ def hit_report_svc(data, ts_col, hit_cols):
 
             hit_dispersity_temporal[i] = np.min(
                 (1., get_hit_dispersity_temporal(hit_event_with_ts)/(1 << 7)))
-            hit_dispersity_spatial[i] = get_hit_dispersity_spatial(
-                hit_event_with_ts[:, 1:])
+            # hit_dispersity_spatial[i] = get_hit_dispersity_spatial(
+            #     hit_event_with_ts[:, 1:])
             # sum of max reading along each ts
             hit_strength[i] = np.min(
                 (1., np.sum(np.max(hit_event_with_ts[:, 1:], axis=0))/(1 << 9)))
-        return hit_dispersity_temporal
+        return hit_dispersity_temporal, hit_strength, hit_events
     else:
         return [], [], []
 
@@ -163,16 +163,16 @@ def get_dataset(data, ts_col, Y_cols, X_cols):
     # X: mpu; Y: hit
     valued_indices_mask = np.zeros(len(data), dtype=bool)
     for hc in Y_cols:
-        valued_indices_mask[np.argwhere(data[:, hc] > 10)] = True
+        valued_indices_mask[np.argwhere(data[:, hc] > hit_th)] = True
     hit_events = clustering_dedup(
-        data[np.argwhere(valued_indices_mask == True), 0], seg_span=1000)
+        data[np.argwhere(valued_indices_mask == True), 0], seg_span=hit_cluster_size)
     # take last element of each cluster as end of each swing window
     dataset = []
     for event_ts in hit_events:
         window = [event_ts[0], event_ts[-1]]
 
         X_indices = np.intersect1d(np.argwhere(
-            data[:, ts_col] > window[0] - 1000), np.argwhere(data[:, ts_col] <= window[1]))
+            data[:, ts_col] > window[0] - hit_cluster_size), np.argwhere(data[:, ts_col] <= window[1]))
         X = data[:, X_cols][X_indices].tolist()
 
         Y_indices = np.intersect1d(np.argwhere(
@@ -383,25 +383,25 @@ def extract_raw_data(file_name):
     file_path = dir_path[:-7] + '/data/' + file_name
     data = np.array(json.load(open(file_path, 'r')))
     data[:, mpu_cols[3:]] /= 512.
-    # if visualize:
-    #     for h in hit_cols:
-    #         plt.scatter(data[:, 0], np.ones(len(data)), alpha=.5, s=data[:, h], label=h)
-    #     plt.legend(loc='upper right')
-    #     plt.show()
-    #     for h in hit_cols:
-    #         plt.scatter(data[:, 0], data[:, h], alpha=.5, label=h)
-    #     plt.legend(loc='upper right')
-    #     plt.show()
-    #     # for m in mpu_cols:
-    #     #     plt.plot(data[:, m])
-    #     #     plt.show()
+    if visualize:
+        for h in hit_cols:
+            plt.scatter(data[:, 0], np.ones(len(data)), alpha=.5, s=data[:, h], label=h)
+        plt.legend(loc='upper right')
+        plt.show()
+        for h in hit_cols:
+            plt.scatter(data[:, 0], data[:, h], alpha=.5, label=h)
+        plt.legend(loc='upper right')
+        plt.show()
+        for m in mpu_cols:
+            plt.plot(data[:, m])
+            plt.show()
     return data
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     
-
-    train_data_list = ['1551918555_0.json', '1551926050_0.json', '1551926286_0.json']
+    train_data_list = ['1552089912_0.json']
+    #train_data_list = ['1551918555_0.json', '1551926050_0.json', '1551926286_0.json']
     data_collection = [extract_raw_data(td) for td in train_data_list]
     train_data = np.vstack([get_dataset(d, ts_col, hit_cols, mpu_cols) for d in data_collection])
     test_data = get_dataset(extract_raw_data('1551925483_0.json'), ts_col, hit_cols, mpu_cols)
@@ -453,7 +453,7 @@ if __name__ == "__main__":
         plt.legend(loc='upper right')
         plt.show()
 
-        fft_result, swing_freq = list(fft_svc(data, ts_col, mpu_cols, ))
+        fft_result, swing_freq = list(fft_svc(data, ts_col, mpu_cols))
         print(swing_freq)
 
     pass
