@@ -208,7 +208,7 @@
           <div class="card-header">
             <i class="fas fa-chart-area"></i>
             Impact strength over time</div>
-          <div class="card-body">
+          <div class="card-body" id="canvas1">
             <canvas id="impactChart" width="100%" height="30"></canvas>
           </div>
           <div class="card-footer small text-muted">Updated yesterday at 11:59 PM</div>
@@ -219,7 +219,7 @@
           <div class="card-header">
             <i class="fas fa-chart-area"></i>
             Number of strong hits vs weak hits</div>
-          <div class="card-body">
+          <div class="card-body" id="canvas2">
             <canvas id="impactBarChart" width="100%" height="30"></canvas>
           </div>
           <div class="card-footer small text-muted">Updated yesterday at 11:59 PM</div>
@@ -229,9 +229,17 @@
         <div class="card mb-3">
           <div class="card-header">
             <i class="fas fa-chart-area"></i>
-            Acceleration (x) over time</div>
-          <div class="card-body">
-            <canvas id="accelerationChart" width="100%" height="30"></canvas>
+            Raw movement data</div>
+          <div class="card-body" id="canvas3">
+            <button type="button" class="btn btn-primary" id="acc_x" onclick="switch_raw(0);">Acceleration (x)</button>
+            <button type="button" class="btn btn-secondary" id="acc_y" onclick="switch_raw(1);">Acceleration (y)</button>
+            <button type="button" class="btn btn-primary" id="acc_z" onclick="switch_raw(2);">Acceleration (z)</button>
+            <button type="button" class="btn btn-secondary" id="g_x" onclick="switch_raw(3);">Gyroscope (x)</button>
+            <button type="button" class="btn btn-primary" id="g_y" onclick="switch_raw(4);">Gyroscope (y)</button>
+            <button type="button" class="btn btn-secondary" id="g_z" onclick="switch_raw(5);">Gyroscope (z)</button>
+            <p></p>
+            <div class="breadcrumb" id="rawTitle">Acceleration (x)</div>
+            <!--<canvas id="rawData" width="100%" height="30"></canvas>-->
           </div>
           <div class="card-footer small text-muted">Updated yesterday at 11:59 PM</div>
         </div>

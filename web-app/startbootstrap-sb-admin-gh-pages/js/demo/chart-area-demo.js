@@ -9,11 +9,9 @@
 // // Create a storage reference from our storage service
 // var storageRef = storage.ref();
 
-var data;
-var labels;
-var impact;
-var accel_x;
-var scaled_impact;
+var data, labels, impact, accel_x, accel_y, accel_z,  gyro_x, gyro_y, gyro_z, scaled_impact;
+var acc_x_canvas, raws;
+var raws_name = ["Acceleration (x)", "Acceleration (y)", "Acceleration (z)", "Gyroscope (x), quasi log-scale", "Gyroscope (y), quasi log-scale", "Gyroscope (z), quasi log-scale"];
 
 // from https://qiita.com/coffee_and_code/items/72f00581c032693c6e33
 firebase.auth().signInWithEmailAndPassword('opsec@google.com', 'opsec1').catch((error) => {
@@ -46,12 +44,24 @@ function try_next_file() {
           // Call line_chart on data with scaling, see above
           line_chart("impactChart", "Impact Strength", impact, 0, 
             Math.ceil(impact.reduce(function(a, b) { return Math.max(a, b); }) / 8) * 8);
-          // WIP
+          // call bar_chart on impact data with thresholding
           bar_chart("impactBarChart", "Impact Strength", impact_bar, 0, 
             Math.ceil(impact_bar.datasets[0].data.reduce(function(a, b) { return Math.max(a+5, b+5); })));
-          // Call line_chart on acceleration data
-          line_chart("accelerationChart", "Acceleration Speed", accel_x, 
+          
+          // Code to create canvas elements in document
+          acc_x_canvas = document.createElement("canvas");
+          acc_x_canvas.setAttribute('id', "rawData");
+          acc_x_canvas.setAttribute('width', "100%");
+          acc_x_canvas.setAttribute('height', "30");
+          document.getElementById("canvas3").appendChild(acc_x_canvas);
+          
+          // Call line_chart on acceleration data           
+          line_chart("rawData", "Acceleration Speed", accel_x, 
             accel_x.reduce(function(a, b) { return Math.min(a, b); }), accel_x.reduce(function(a, b) { return Math.max(a, b); }));
+    
+          // remove visualization from memory and from canvas drawing - ineffective
+          //acc_x_canvas.parentNode.removeChild(acc_x_canvas);
+          //acc_x_canvas = null;
       };
       xhr.open('GET', url);
       xhr.send();
@@ -105,6 +115,11 @@ function parse_data(raw) {
   labels = [];
   impact = [];
   accel_x = [];
+  accel_y = [];
+  accel_z = [];
+  gyro_x = [];
+  gyro_y = [];
+  gyro_z = [];
   for (i = 0; i < raw.length; i++) {
     data[i] = {
       time: raw[i][0]/1000,
@@ -169,8 +184,21 @@ function parse_data(raw) {
 
     // Add basic data to array for printing
     accel_x.push(Math.round((data[key].a_x) * 1000) / 10);
+    accel_y.push(Math.round((data[key].a_y) * 1000) / 10);
+    accel_z.push(Math.round((data[key].a_z) * 1000) / 10);
+    // Log-scaling with sign maintenance to make data legible
+    var temp = Math.round(((data[key].g_x) * 1000) / 10);
+    var sign = Math.sign(temp);
+    gyro_x.push(sign * Math.log(Math.abs(temp)));
+    temp = Math.round(((data[key].g_y) * 1000) / 10);
+    sign = Math.sign(temp);
+    gyro_y.push(sign * Math.log(Math.abs(temp)));
+    temp = Math.round(((data[key].g_z) * 1000) / 10);
+    sign = Math.sign(temp);
+    gyro_z.push(sign * Math.log(Math.abs(temp)));
   }
-
+  
+  raws = [accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z];
 }
 
 // console.log(labels)
@@ -184,7 +212,7 @@ function parse_data(raw) {
     and minimum and maximum scales for y axis */
 function line_chart(chart_name, item_label, data, minScale, maxScale) {
   var ctx = document.getElementById(chart_name);
-  var myLineChart = new Chart(ctx, {
+  var the_chart = new Chart(ctx, {
     type: 'line',
     data: {
       labels: labels,
@@ -237,16 +265,16 @@ function line_chart(chart_name, item_label, data, minScale, maxScale) {
       }
     }
   });
+  the_chart = null;
 }
 
-// wip
 /*  bar_chart requires ID of a canvas in DOM,
     label for the values,
     data where len(data) == len(timestamps),
     and minimum and maximum scales for y axis */
 function bar_chart(chart_name, item_label, data, minScale, maxScale) {
   var ctx = document.getElementById(chart_name);
-  var myLineChart = new Chart(ctx, {
+  var the_chart = new Chart(ctx, {
     type: 'bar',
     data: data,
     options: {
@@ -275,4 +303,27 @@ function bar_chart(chart_name, item_label, data, minScale, maxScale) {
       }
     }
   });
+  the_chart = null;
+}
+
+/*
+ * Does new chart
+ * */
+function switch_raw(imu) {
+    // remove old visualization from memory and from canvas drawing - somewhat ineffective
+    acc_x_canvas.parentNode.removeChild(acc_x_canvas);
+    acc_x_canvas = null;
+    
+    // Code to recreate canvas elements in document
+    acc_x_canvas = document.createElement("canvas");
+    acc_x_canvas.setAttribute('id', "rawData");
+    acc_x_canvas.setAttribute('width', "100%");
+    acc_x_canvas.setAttribute('height', "30");
+    document.getElementById("canvas3").appendChild(acc_x_canvas);
+    
+    document.getElementById("rawTitle").innerHTML = raws_name[parseInt(imu)];
+    
+    // Call line_chart on acceleration data           
+    line_chart("rawData", raws_name[parseInt(imu)], raws[parseInt(imu)], 
+        raws[parseInt(imu)].reduce(function(a, b) { return Math.min(a, b); }), raws[parseInt(imu)].reduce(function(a, b) { return Math.max(a, b); }));
 }
