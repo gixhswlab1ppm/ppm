@@ -318,22 +318,48 @@ def train_rnn(X, Y, X_test, Y_test):
     # plt.show()
 
     input_X = tf.keras.layers.Input(shape=(16, 6))
-    r_0 = tf.keras.layers.SimpleRNN(24)(input_X)
-    dense_0 = tf.keras.layers.Dense(16, activation='elu', use_bias=False)(r_0)
+    # r_0 = tf.keras.layers.SimpleRNN(24)(input_X)
+    r_0 = tf.keras.layers.Conv1D(24, 1)(input_X)
+    fla = tf.keras.layers.Flatten()(r_0)
+    dense_0 = tf.keras.layers.Dense(16, activation='relu', use_bias=False)(fla)
     bn_0 = tf.keras.layers.BatchNormalization()(dense_0)
     dropout_0 = tf.keras.layers.Dropout(.5)(bn_0)
-    dense_1 = tf.keras.layers.Dense(8, activation='elu', use_bias=False)(dropout_0)
+    dense_1 = tf.keras.layers.Dense(8, activation='relu', use_bias=False)(dropout_0)
     bn_1 = tf.keras.layers.BatchNormalization()(dense_1)
     dropout_1 = tf.keras.layers.Dropout(.5)(bn_1)
     output_Y = tf.keras.layers.Dense(n_labels, activation='sigmoid', use_bias=False)(dropout_1)
     model = tf.keras.models.Model(inputs=input_X, outputs=output_Y)
     print(model.summary())
 
+    # The following arch has better loss but is incompatible with tfLite
+    # input_X = tf.keras.layers.Input(shape=(16, 6))
+    # r_0 = tf.keras.layers.SimpleRNN(24)(input_X)
+    # dense_0 = tf.keras.layers.Dense(16, activation='elu', use_bias=False)(r_0)
+    # bn_0 = tf.keras.layers.BatchNormalization()(dense_0)
+    # dropout_0 = tf.keras.layers.Dropout(.5)(bn_0)
+    # dense_1 = tf.keras.layers.Dense(8, activation='elu', use_bias=False)(dropout_0)
+    # bn_1 = tf.keras.layers.BatchNormalization()(dense_1)
+    # dropout_1 = tf.keras.layers.Dropout(.5)(bn_1)
+    # output_Y = tf.keras.layers.Dense(n_labels, activation='sigmoid', use_bias=False)(dropout_1)
+    # model = tf.keras.models.Model(inputs=input_X, outputs=output_Y)
+
     model.compile(optimizer='adam', loss='mean_absolute_error', metrics=['mse'])
 
     # TODO !impt scale by each feature X = StandardScaler().fit_transform(X)
     history = model.fit(X, [Y], epochs=1024,
                         validation_data=(X_test, [Y_test]))
+    
+    tf.keras.models.save_model(model, 'magic_model')
+    converter = tf.lite.TFLiteConverter.from_keras_model_file('magic_model')
+    tflite_model = converter.convert()
+    open('magic_model.tflite', 'wb').write(tflite_model)
+
+    # converter = tf.lite.TFLiteConverter.from_session(sess, input_X, output_Y)
+    # tflite_model = converter.convert()
+    # open("converted_model.tflite", "wb").write(tflite_model)
+
+
+
     y_pred = model.predict(X)
     y_test_pred = model.predict(X_test)
 
@@ -404,8 +430,8 @@ def extract_raw_data(file_name):
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     
-    train_data_list = ['1551925483_0.json']
-    #train_data_list = ['1551918555_0.json', '1551926050_0.json', '1551926286_0.json']
+    # train_data_list = ['1551925483_0.json']
+    train_data_list = ['1551918555_0.json', '1551926050_0.json', '1551926286_0.json']
     data_collection = [extract_raw_data(td) for td in train_data_list]
     train_data = np.vstack([get_dataset(d, ts_col, hit_cols, mpu_cols) for d in data_collection])
     test_data = get_dataset(extract_raw_data('1551925483_0.json'), ts_col, hit_cols, mpu_cols)

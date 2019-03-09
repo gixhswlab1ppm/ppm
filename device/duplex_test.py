@@ -137,6 +137,8 @@ def on_navigate_to_profile_screen():
 
     def profile_screen_button_handler():
         profile.update_id((profile.get_id() + 1) % profile.get_len())
+        if debug:
+            print('profile switched to ', profile.get_id())
         threading.Thread(target=display.render_profile_screen,
                          args=(profile.get_id(),)).start()
 
