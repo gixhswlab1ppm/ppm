@@ -1,12 +1,12 @@
 debug = True  # true if output more debug info to console
+simulate = False
+
 storage_remote = False
 
 dev_arduino = True  # false if data is collected from arduino in real time
 dev_button = True  # true if the start/end physical button is available
 dev_display = True  # true if e-ink display is available
 dev_pi = True  # true if computing is on pi w/ flat folder structure
-
-ui_state = 0  # 0: Keep Flat, 1: User Profile, 2: Keep Swinging, 3: Running, 4: Paused
 
 import threading
 if dev_display:
@@ -43,7 +43,8 @@ proc_buff_size = 1 << 8  # 50 dp/sec -> 40 sec
 packet_ver = 1
 n_readers = 4
 
-is_alive = False  # arduino data handling switch
+is_paused = False  # arduino data handling switch
+ui_state = 0  # 0: Keep Flat, 1: User Profile, 2: Keep Swinging, 3: Running, 4: Paused
 
 # assumption must hold true: data arrives *continuously*
 proc_buf = circular_buffer.circular_buffer(
@@ -51,32 +52,10 @@ proc_buf = circular_buffer.circular_buffer(
 
 import json
 
-class profile_manager:
-    fields = ["id", "th"]
-    def __init__(self):
-        self.profiles = json.load(open('profile.json', 'r'))
-    def _get_index(self, _id):
-        return [i for i,p in enumerate(self.profiles) if p["id"] == _id][0]
-    def update_id(self, _id):
-        self.profile_id = _id
-    def update(self, profile):
-        self.profiles[self._get_index(self.profile_id)] = profile
-        json.dump(self.profiles, open('profile.json', 'w'))
-    def update_field(self, field, val):
-        profile = self.profiles[self._get_index(self.profile_id)]
-        profile[field] = val
-        self.update(profile)
-    def get_field(self, field):
-        if field in self.profiles[self._get_index(self.profile_id)]:
-            return self.profiles[self._get_index(self.profile_id)][field]
-        else:
-            return None
-    def get_id(self):
-        return self.profile_id
-    def get_len(self):
-        return 5
 
-profile = profile_manager()
+import profile_manager 
+profile = profile_manager.profile_manager()
+
 
 def swing_counter():
     time.sleep(5)
@@ -87,7 +66,7 @@ def swing_counter():
         chunk = proc_buf.try_read(0, 20)
         if chunk is None:
             # long sleep until data ready
-            time.sleep(5 if not is_alive else .5)
+            time.sleep(5 if is_paused else .5)
             continue
         cluster_ts_per_feature, _ = swing_count_svc(
             np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)),
@@ -113,7 +92,7 @@ def hit_reporter():
     while True:
         chunk = proc_buf.try_read(1, 1 << 4)  # approx. per 2 sec
         if chunk is None:
-            time.sleep(5 if not is_alive else .1)
+            time.sleep(5 if is_paused else .1)
             continue
         h_dt, h_st, h_events = hit_report_svc(
             np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)), 0, [7, 8, 9])
@@ -138,7 +117,7 @@ def fft_near_realtime():
             time.sleep(5)
         chunk = proc_buf.try_read(2, 1 << 5)
         if chunk is None:
-            time.sleep(5 if not is_alive else 5)
+            time.sleep(5 if is_paused else 5)
             continue
         result = fft_svc(np.array(chunk.tolist()).reshape(
             len(chunk), len(packet_dt)), 0, [1, 2, 3, 4, 5, 6], win_len=0)
@@ -146,64 +125,30 @@ def fft_near_realtime():
             print('fft_nrt result available')
 
 
-# def lt_precise_insights(file_name):
-#     # load all data since program start
-#     sensor_data = ujson.load(open(file_name, 'r'))
-#     rpi_rt_pipeline.rt_process_file(sensor_data)
-
-def user_input_handler():  # when not alive, worker thread will still run till data processed
-    worker_threads = [
-        threading.Thread(target=swing_counter),
-        threading.Thread(target=hit_reporter),
-        # threading.Thread(target=fft_near_realtime)
-    ]
-    for th in worker_threads:
-        th.start()
-    if debug:
-        print('worker threads started')
-    # 0: Keep Flat, 1: User Profile, 2: Keep Swinging, 3: Running, 4: Paused
-
-    def end():
-        if debug:
-            print('activity ends')
-        global is_alive
-        is_alive = False
-        if dev_button:
-            button.when_pressed = start
-
-    def start():
-        if debug:
-            print('activity starts')
-        global is_alive
-        is_alive = True
-        if dev_button:
-            button.when_pressed = end
-    if debug:
-        print('boot seq complete')
-    print('waiting for start')
-    if dev_button:
-        button.when_pressed = start
-
-
-def ui_1_button_pressed_handler():
-    profile.update_id((profile.get_id() + 1)%profile.get_len())
-    threading.Thread(target=display.render_profile_screen,
-                     args=(profile.get_id(),)).start()
-
-
 def on_navigate_to_profile_screen():
+    if debug:
+        print('on_navigate_to_profile_screen')
+
+    def profile_screen_button_handler():
+        profile.update_id((profile.get_id() + 1) % profile.get_len())
+        threading.Thread(target=display.render_profile_screen,
+                         args=(profile.get_id(),)).start()
+
     global ui_state
     ui_state = 1
     threading.Thread(target=display.render_profile_screen).start()
     profile_start_time = time.time()
     if dev_button:
-        button.when_pressed = ui_1_button_pressed_handler
+        button.when_pressed = profile_screen_button_handler
     while time.time() - profile_start_time < 5:
         time.sleep(.1)
     if dev_button:
         button.when_pressed = None
 
+
 def on_navigate_to_train_screen():
+    if debug:
+        print('on_navigate_to_train_screen')
     global ui_state
     ui_state = 2
     threading.Thread(target=display.render_train_screen).start()
@@ -218,28 +163,69 @@ def on_navigate_to_train_screen():
         0,
         [1, 2, 3, 4, 5, 6])
     profile.update_field("th", curr_thresholds)
+    if debug:
+        print('learned thresholds', curr_thresholds)
+
 
 def on_navigate_to_run_screen():
+    if debug:
+        print('on_navigate_to_run_screen')
+
+    def run_screen_button_handler():
+        global is_paused
+        is_paused = not is_paused
+        if debug:
+            print('activity ', 'paused' if is_paused else 'resumed')
+
     global ui_state
     ui_state = 3
+    worker_threads = [swing_counter, hit_reporter]
+    for th in worker_threads:
+        threading.Thread(target=th).start()
     threading.Thread(target=display.render_run_screen).start()
+    if dev_button:
+        button.when_pressed = run_screen_button_handler
+
 
 if __name__ == "__main__":
     on_navigate_to_profile_screen()
     th = profile.get_field("th")
+
+    # scenario: simulation
+    if simulate:
+        if debug:
+            print('simulation starts')
+
+        def run_simulate(data):
+            delays = .05 + np.random.rand(len(data))/10
+            for i, d in enumerate(delays):
+                proc_buf.write_one(data[i])
+                time.sleep(d)
+            if debug:
+                print('simulation ends')
+
+        import os
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        if dev_pi:
+            file_path = dir_path + '/1550355620_0.json'
+        else:
+            file_path = dir_path[:-7] + '/data/1550355620_0.json'
+        data = json.load(open(file_path, 'r'))
+        data = np.array([tuple(s) for s in data], dtype=packet_dt)
+        threading.Thread(target=run_simulate, args=(data,)).start()
+
     if th is None:
         on_navigate_to_train_screen()
     on_navigate_to_run_screen()
 
     if dev_arduino:
+        if debug:
+            n_packet = 0
+            n_packet_success = 0
         import ujson
         while True:
-            if not is_alive:
-                if debug:
-                    print('sleeping for 2 sec')
-                time.sleep(2)
-                continue
-
+            if debug:
+                n_packet += 1
             packet = None
             if packet_ver < 1:
                 import struct
@@ -249,7 +235,6 @@ if __name__ == "__main__":
                     continue
                 packet = tuple(struct.unpack_from(packet_fmt, res))
             else:
-                # print('reading sensor data')
                 try:
                     res = str(dev.read_until())
                     res = res[res.find('['):res.find(']')+1]
@@ -263,28 +248,10 @@ if __name__ == "__main__":
             if not len(packet) == len(packet_dt):
                 continue
 
-            proc_buf.write_one(packet)
-    else:
-        if debug:
-            print('simulation starts')
-
-        def run_simulate(data):
-            time.sleep(1.5)
-            global is_alive
-            is_alive = True
-            delays = .05 + np.random.rand(len(data))/10
-            for i, d in enumerate(delays):
-                proc_buf.write_one(data[i])
-                time.sleep(d)
             if debug:
-                print('simulation ends')
+                n_packet_success += 1
+                if n_packet % 50 == 0:
+                    print('packet success rate: {0:.2f}'.format(
+                        n_packet_success/n_packet))
 
-        if dev_pi:
-            file_path = dir_path + '/1550355620_0.json'
-        else:
-            file_path = dir_path[:-7] + '/data/1550355620_0.json'
-        data = json.load(open(file_path, 'r'))
-        data = np.array([tuple(s) for s in data], dtype=packet_dt)
-        threading.Thread(target=run_simulate, args=(data,)).start()
-        while True:
-            time.sleep(10)
+            proc_buf.write_one(packet)
