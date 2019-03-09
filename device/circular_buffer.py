@@ -42,8 +42,10 @@ class circular_buffer():
     - Per-epoch dumping
     - Custom datatype
     '''
-    def __init__(self, max_len, n_readers, dtype): 
+    def __init__(self, max_len, n_readers, dtype, storage_remote): 
         self._lock = threading.Lock()
+        if storage_remote:
+            init_storage()
         self._maxlen = max_len
         self._buf = np.empty((self._maxlen, ), dtype=dtype)
         self._dtype_has_fields = self._buf.dtype.fields is None
@@ -53,6 +55,7 @@ class circular_buffer():
         self._writer = self._maxlen-1  # position to write; no check for readers
         self._epoch = 0
         self._ts = math.floor(time.time())
+
     def write_one(self, data):
         with self._lock:
             self._buf[self._writer] = data
@@ -97,34 +100,35 @@ class circular_buffer():
 
     # will return None if existing content not bigger than window
     # data "invisible" for current reader upon successful read
-    def try_read(self, reader_idx, window):
+    def try_read(self, reader_idx, n_read, n_offset=-1):
+        if n_offset <0:
+            n_offset = n_read
         with self._lock:
-            if reader_idx >= len(self._readers) or window > self._maxlen:
+            if reader_idx >= len(self._readers) or n_read > self._maxlen or n_offset > n_read:
                 raise Exception()
             if debug:
                 print('valid item count for read {0} is {1}'.format(reader_idx, np.sum(self._valid[reader_idx, :])))
             reader = self._readers[reader_idx]
-            window_ori = window
             result = np.empty(0, dtype=self._buf.dtype)
-            if reader + 1 < window:
-                if not np.alltrue(self._valid[reader_idx, :reader+1]) or not np.alltrue(self._valid[reader_idx, -(window-reader-1):]):
-                    # print('None')
+            if reader + 1 < n_read:
+                if not np.alltrue(self._valid[reader_idx, :reader+1]) or not np.alltrue(self._valid[reader_idx, -(n_read-reader-1):]):
                     return None
-                self._valid[reader_idx, :reader+1] = False
-                self._valid[reader_idx, -(window-reader-1):] = False
                 result = np.hstack(
-                    [result, self._buf[:reader+1][::-1], self._buf[-(window-reader-1):][::-1]])
+                    [result, self._buf[:reader+1][::-1], self._buf[-(n_read-reader-1):][::-1]])
             else:
-                if not np.alltrue(self._valid[reader_idx, reader-window+1:reader+1]):
-                    # print('None')
+                if not np.alltrue(self._valid[reader_idx, reader-n_read+1:reader+1]):
                     return None
-                self._valid[reader_idx, reader-window+1:reader+1] = False
                 result = np.hstack(
-                    [result, self._buf[reader-window+1:reader+1][::-1]])
+                    [result, self._buf[reader-n_read+1:reader+1][::-1]])
+            if reader + 1 < n_offset:
+                self._valid[reader_idx, :reader+1] = False
+                self._valid[reader_idx, -(n_offset-reader-1):] = False
+            else:
+                self._valid[reader_idx, reader-n_offset+1:reader+1] = False
             if len(result) == 0:
                 # print('None')
                 return None
-            self._readers[reader_idx] = (reader - window_ori) % self._maxlen
+            self._readers[reader_idx] = (reader - n_offset) % self._maxlen
             # if debug:
             #     print('reader {0} result {1}'.format(reader_idx, result))
             return np.array(result)
@@ -132,18 +136,15 @@ class circular_buffer():
     def get_len(self, reader_idx):
         return np.sum(self._valid[reader_idx])
 
-if storage:
-    init_storage()
-
 if __name__ == "__main__":
-    cb = circular_buffer(5, 3, np.dtype(float))
+    cb = circular_buffer(5, 3, np.dtype(float), False)
     cb.write_iterable([4, 3, 2, 1, 0, -1, -2])
     cb.write_iterable([4, 3, 2, 1, 0, -1, -2])
     cb.write_iterable([4, 3, 2, 1, 0, -1, -2])
     print(cb.get_len(0))
-    cb.try_read(0, 2)
+    print(cb.try_read(0, 2, 1))
     print(cb.get_len(0))
-    cb.try_read(0, 1)
+    print(cb.try_read(0, 1,1))
     print(cb.get_len(0))
-    cb.try_read(0, 2)
+    print(cb.try_read(0, 2,1))
     print(cb.get_len(0))
