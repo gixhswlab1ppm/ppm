@@ -50,6 +50,7 @@ function refresh_canvas(canvasObj, canvasID, newID) {
 
 /* Used to load the filenames into the table on the app
  * Adds onclick attribute allowing user to switch between files for visualization
+ * Called on document load, so it is used to default-load the first filename in the log file.
  * TODO: Alter to add in the user ID of the page, and to include more information (e.g. timestamp)
  */
 function load_filenames() {    
@@ -73,7 +74,7 @@ function load_filenames() {
               document.getElementById("storageTable").appendChild(tRow);
               var tID = document.createElement("td");
               tID.innerHTML = filenames[k];
-              tID.setAttribute('onclick', "try_next_file(" + filenames[k] + ");");
+              tID.setAttribute('onclick', "load_file(" + filenames[k] + ");");
               document.getElementById("row" + k.toString()).appendChild(tID);
               var tDate = document.createElement("td");
               document.getElementById("row" + k.toString()).appendChild(tDate);
@@ -84,6 +85,8 @@ function load_filenames() {
               //canvasObj.setAttribute('width', "100%");
               //canvasObj.setAttribute('height', "30");
               //document.getElementById("storageTable").appendChild(canvasObj);
+              
+              load_file(filenames[0]);
           }
           // Call the dataTables jQuery plugin
           // Use parameter reducing pageLength to 5
@@ -100,11 +103,10 @@ function load_filenames() {
   });
 }
 
-// tries the next file
-// TODO: replace this approach with latest_file() instead of i.toString()
-load_filenames();
-try_next_file(i.toString());
-function try_next_file(filename) {    
+/* This loads the file within the Firebase Cloud Storage with filename of the given parameter
+ * Loads with x acceleration in the raw data as a default.
+ */
+function load_file(filename) {    
   console.log('accessing file: ' + filename + '.json');
   storageRef.child(filename + '.json').getDownloadURL().then(function (url) {
       var xhr = new XMLHttpRequest();
@@ -124,21 +126,21 @@ function try_next_file(filename) {
           bar_chart("impactBarChart", "Impact Strength", impact_bar, 0, 
             Math.ceil(impact_bar.datasets[0].data.reduce(function(a, b) { return Math.max(a+5, b+5); })));
           
-          // Call line_chart on acceleration data           
+          // Call line_chart on acceleration data as a default, this canvas gets changed by
+          // button onclick calls to switch_raw()
           raw_canvas = refresh_canvas(raw_canvas, "canvas3", "rawData");
           line_chart("rawData", "Acceleration Speed", accel_x, 
             accel_x.reduce(function(a, b) { return Math.min(a, b); }), accel_x.reduce(function(a, b) { return Math.max(a, b); }));
-    
       };
       xhr.open('GET', url);
       xhr.send();
   }).catch(function (error) {
       // Report errors to log
       console.log("error caught", error);
-      // part of try_next_file code
+      // part of load_file code
       i--;
-      try_next_file(i.toString());
-      // end of try_next_file code
+      load_file(i.toString());
+      // end of load_file code
       // Handle any errors
   });
 }
@@ -382,3 +384,6 @@ function switch_raw(imu) {
     line_chart("rawData", raws_name[parseInt(imu)], raws[parseInt(imu)], 
         raws[parseInt(imu)].reduce(function(a, b) { return Math.min(a, b); }), raws[parseInt(imu)].reduce(function(a, b) { return Math.max(a, b); }));
 }
+
+// IDK the standard for having a main in Javascript, so it's here
+load_filenames();
