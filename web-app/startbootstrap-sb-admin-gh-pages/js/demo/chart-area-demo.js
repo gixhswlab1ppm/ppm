@@ -10,7 +10,8 @@
 // var storageRef = storage.ref();
 
 var data, labels, impact, accel_x, accel_y, accel_z,  gyro_x, gyro_y, gyro_z, scaled_impact;
-var acc_x_canvas, raws;
+var raw_canvas = null, imp_line_canvas = null, imp_bar_canvas = null;
+var raws, filenames;
 var raws_name = ["Acceleration (x)", "Acceleration (y)", "Acceleration (z)", "Gyroscope (x), quasi log-scale", "Gyroscope (y), quasi log-scale", "Gyroscope (z), quasi log-scale"];
 
 // from https://qiita.com/coffee_and_code/items/72f00581c032693c6e33
@@ -28,40 +29,106 @@ storageRef = storage.ref('');
 // console.log("1", storageRef);
 // inits a variable to linearly search down from
 var i = 55;
+
+/* Deletes the old canvas (canvasObj being canvas object,
+ * canvasID being the ID for the parent where the canvas will go,
+ * and newID being the ID for the child canvas.
+ */
+function refresh_canvas(canvasObj, canvasID, newID) {
+    if (canvasObj !== null) {
+        canvasObj.parentNode.removeChild(canvasObj);
+        canvasObj = null;
+    }
+    // Code to recreate canvas elements in document
+    canvasObj = document.createElement("canvas");
+    canvasObj.setAttribute('id', newID);
+    canvasObj.setAttribute('width', "100%");
+    canvasObj.setAttribute('height', "30");
+    document.getElementById(canvasID).appendChild(canvasObj);
+    return canvasObj;
+}
+
+/* Used to load the filenames into the table on the app
+ * Adds onclick attribute allowing user to switch between files for visualization
+ * TODO: Alter to add in the user ID of the page, and to include more information (e.g. timestamp)
+ */
+function load_filenames() {    
+  console.log('accessing file: log.json');
+  storageRef.child('log.json').getDownloadURL().then(function (url) {
+      var xhr = new XMLHttpRequest();
+      xhr.responseType = 'json';
+      // asynch stuff, this is basically our main
+      xhr.onload = function () {
+          // parse data once you've got it
+          filenames = xhr.response;
+          for (var k = 0; k < filenames.length; k++) {
+                // making:
+                //<tr>
+                //  <td>Tiger Nixon</td>
+                //  <td>System Architect</td>
+                //  <td>Edinburgh</td>
+                //</tr>
+              var tRow = document.createElement("tr");
+              tRow.setAttribute('id', "row" + k.toString());
+              document.getElementById("storageTable").appendChild(tRow);
+              var tID = document.createElement("td");
+              tID.innerHTML = filenames[k];
+              tID.setAttribute('onclick', "try_next_file(" + filenames[k] + ");");
+              document.getElementById("row" + k.toString()).appendChild(tID);
+              var tDate = document.createElement("td");
+              document.getElementById("row" + k.toString()).appendChild(tDate);
+              var tTime = document.createElement("td");
+              document.getElementById("row" + k.toString()).appendChild(tTime);
+              
+              //canvasObj.setAttribute('id', newID);
+              //canvasObj.setAttribute('width', "100%");
+              //canvasObj.setAttribute('height', "30");
+              //document.getElementById("storageTable").appendChild(canvasObj);
+          }
+          // Call the dataTables jQuery plugin
+          // Use parameter reducing pageLength to 5
+          $('#dataTable').DataTable({
+            "pageLength": 5
+          });
+      };
+      xhr.open('GET', url);
+      xhr.send();
+  }).catch(function (error) {
+      // Report errors to log
+      console.log("error caught loading filenames log", error);
+      // Handle any errors
+  });
+}
+
 // tries the next file
 // TODO: replace this approach with latest_file() instead of i.toString()
-try_next_file();
-function try_next_file() {
-  console.log('accessing file: '+i.toString()+'.json');
-  storageRef.child(i.toString()+'.json').getDownloadURL().then(function (url) {
+load_filenames();
+try_next_file(i.toString());
+function try_next_file(filename) {    
+  console.log('accessing file: ' + filename + '.json');
+  storageRef.child(filename + '.json').getDownloadURL().then(function (url) {
       var xhr = new XMLHttpRequest();
       xhr.responseType = 'json';
       // asynch stuff, this is basically our main
       xhr.onload = function () {
           // parse data once you've got it
           parse_data(xhr.response);
-
+          
           // Call line_chart on data with scaling, see above
+          imp_line_canvas = refresh_canvas(imp_line_canvas, "canvas1", "impactChart");
           line_chart("impactChart", "Impact Strength", impact, 0, 
             Math.ceil(impact.reduce(function(a, b) { return Math.max(a, b); }) / 8) * 8);
+          
           // call bar_chart on impact data with thresholding
+          imp_bar_canvas = refresh_canvas(imp_bar_canvas, "canvas2", "impactBarChart");
           bar_chart("impactBarChart", "Impact Strength", impact_bar, 0, 
             Math.ceil(impact_bar.datasets[0].data.reduce(function(a, b) { return Math.max(a+5, b+5); })));
           
-          // Code to create canvas elements in document
-          acc_x_canvas = document.createElement("canvas");
-          acc_x_canvas.setAttribute('id', "rawData");
-          acc_x_canvas.setAttribute('width', "100%");
-          acc_x_canvas.setAttribute('height', "30");
-          document.getElementById("canvas3").appendChild(acc_x_canvas);
-          
           // Call line_chart on acceleration data           
+          raw_canvas = refresh_canvas(raw_canvas, "canvas3", "rawData");
           line_chart("rawData", "Acceleration Speed", accel_x, 
             accel_x.reduce(function(a, b) { return Math.min(a, b); }), accel_x.reduce(function(a, b) { return Math.max(a, b); }));
     
-          // remove visualization from memory and from canvas drawing - ineffective
-          //acc_x_canvas.parentNode.removeChild(acc_x_canvas);
-          //acc_x_canvas = null;
       };
       xhr.open('GET', url);
       xhr.send();
@@ -70,7 +137,7 @@ function try_next_file() {
       console.log("error caught", error);
       // part of try_next_file code
       i--;
-      try_next_file();
+      try_next_file(i.toString());
       // end of try_next_file code
       // Handle any errors
   });
@@ -166,18 +233,18 @@ function parse_data(raw) {
     };
     
     // catch zeroes and negative infinities from final list
-    for (var i = 0; i < impact.length; i++) {
-      if (impact[i] == Number.NEGATIVE_INFINITY) {
-        impact[i] = 0;
+    for (var j = 0; j < impact.length; j++) {
+      if (impact[j] == Number.NEGATIVE_INFINITY) {
+        impact[j] = 0;
       }
-      else if (isNaN(impact[i])) {
-        impact[i] = 0;
+      else if (isNaN(impact[j])) {
+        impact[j] = 0;
       }
       // thresholding code to determine how many strong hits vs how many weak hits occur
-      if (impact[i] > 4) {
+      if (impact[j] > 4) {
         impact_bar.datasets[0].data[0] += 1;
       }
-      else if (impact[i] > 2.8) {
+      else if (impact[j] > 2.8) {
         impact_bar.datasets[0].data[1] += 1;
       }
     }
@@ -187,24 +254,19 @@ function parse_data(raw) {
     accel_y.push(Math.round((data[key].a_y) * 1000) / 10);
     accel_z.push(Math.round((data[key].a_z) * 1000) / 10);
     // Log-scaling with sign maintenance to make data legible
-    var temp = Math.round(((data[key].g_x) * 1000) / 10);
-    var sign = Math.sign(temp);
-    gyro_x.push(sign * Math.log(Math.abs(temp)));
-    temp = Math.round(((data[key].g_y) * 1000) / 10);
-    sign = Math.sign(temp);
-    gyro_y.push(sign * Math.log(Math.abs(temp)));
-    temp = Math.round(((data[key].g_z) * 1000) / 10);
-    sign = Math.sign(temp);
-    gyro_z.push(sign * Math.log(Math.abs(temp)));
+    var gyros = [[gyro_x, "g_x"], [gyro_y, "g_y"], [gyro_z, "g_z"]];
+    var temp, sign;
+    for (var h = 0; h < gyros.length; h++) {
+        temp = Math.round(((data[key][gyros[h][1]]) * 1000) / 10);
+        sign = Math.sign(temp);
+        temp = Math.log(Math.abs(temp));
+        if (temp == Number.NEGATIVE_INFINITY) {temp = 0;}
+        gyros[h][0].push(sign * temp);
+    }
   }
   
   raws = [accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z];
 }
-
-// console.log(labels)
-// console.log(data)
-// console.log(impact)
-// console.log(accel_x)
 
 /*  line_chart requires ID of a canvas in DOM,
     label for the values,
@@ -307,19 +369,12 @@ function bar_chart(chart_name, item_label, data, minScale, maxScale) {
 }
 
 /*
- * Does new chart
+ * Function called by buttons to switch between raw data visualizations
+ * Takes in an integer corresponding to the raw data index,
+ * clears the raw data canvas and draws a new visualiation with corresponding raw data.
  * */
 function switch_raw(imu) {
-    // remove old visualization from memory and from canvas drawing - somewhat ineffective
-    acc_x_canvas.parentNode.removeChild(acc_x_canvas);
-    acc_x_canvas = null;
-    
-    // Code to recreate canvas elements in document
-    acc_x_canvas = document.createElement("canvas");
-    acc_x_canvas.setAttribute('id', "rawData");
-    acc_x_canvas.setAttribute('width', "100%");
-    acc_x_canvas.setAttribute('height', "30");
-    document.getElementById("canvas3").appendChild(acc_x_canvas);
+    raw_canvas = refresh_canvas(raw_canvas, "canvas3", "rawData");
     
     document.getElementById("rawTitle").innerHTML = raws_name[parseInt(imu)];
     
