@@ -4,6 +4,7 @@ from PIL import Image,ImageDraw,ImageFont
 import traceback
 import threading
 import collections
+import circular_buffer
 
 epd = epd2in13d.EPD()
 epd.init()
@@ -36,9 +37,9 @@ def render_profile_screen(user_id=0):
     dr.text((8,8), 'User Profiles', font=field_font, fill=0)
     for i in range(5):
         if i == user_id:
-            dr.ellipse((8+i*(24+12), 36, 32+i*24, 36), outline='black', fill=0)
+            dr.ellipse([8+i*24, 36, 20+i*24, 36+12], outline='black', fill=0)
         else:
-            dr.ellipse((8+i*(24+12), 36, 32+i*24, 36), outline='black')
+            dr.ellipse([8+i*24, 36, 20+i*24, 36+12], outline='black')
     with dev_lock:
         epd.display(epd.getbuffer(bg))
 def render_train_screen():
@@ -50,31 +51,48 @@ def render_train_screen():
         epd.display(epd.getbuffer(bg))
 def render_run_screen():
     bg = Image.new('1', (epd2in13d.EPD_HEIGHT, epd2in13d.EPD_WIDTH), 255)
-    bg.paste(Image.open('paddle.jpg'), (8,8)) #24*24
-    bg.paste(Image.open('wave.jpg'), (8,36)) #ball
-    bg.paste(Image.open('swing.jpg'), (96,8)) #clock
-    bg.paste(Image.open('thumb.jpg'), (96,36)) #round
-    update_display_partial(5, "Playing")
+    bg.paste(Image.open('paddle.jpg'), (8,8)) #0
+    bg.paste(Image.open('swing.jpg'), (8,36)) #1
+    bg.paste(Image.open('wave.jpg'), (96,8)) #2
+    bg.paste(Image.open('thumb.jpg'), (96,36)) #3
+    with dev_lock:
+        epd.display(epd.getbuffer(bg))
+        global last_img
+        last_img = bg
+    async_update_display_partial(5, "Playing")
     
 def render_pause_screen():
-    update_display_partial(5, "Paused")
+    async_update_display_partial(5, "Paused")
 
-def update_display_partial(field_id, field_val, field_font=field_font): # num, text
-    # multi threads accessing update_field, will cause "roll-back" hazard if without lock!
-    with dev_lock:
-        global last_img
-        background_img2 = last_img.copy()
-        field_draw = ImageDraw.Draw(background_img2)
-        field_draw.rectangle(tuple(field_locations[field_id]), fill=255)
-        field_draw.text(tuple(field_locations[field_id][:2]), str(field_val), font=field_font, fill=0)
-        cropped_img = background_img2.crop(field_locations[field_id])
-        try:
-            background_img2.paste(cropped_img, tuple(field_locations[field_id][:2]))
-            epd.DisplayPartial(epd.getbuffer(background_img2))
-            last_img = background_img2
-        except:
-            print('gg')
-    print('updated field {0} with val {1}'.format(field_id, field_val))
+def update_display_partial():
+    while True:
+        cmd = cmd_buf.try_read(0, 1)
+        if cmd is None:
+            time.sleep(0.1)
+            continue
+        field_id, field_val = cmd[0]
+        with dev_lock:
+            global last_img
+            background_img2 = last_img.copy()
+            field_draw = ImageDraw.Draw(background_img2)
+            field_draw.rectangle(tuple(field_locations[field_id]), fill=255)
+            field_draw.text(tuple(field_locations[field_id][:2]), str(field_val), font=field_font, fill=0)
+            cropped_img = background_img2.crop(field_locations[field_id])
+            try:
+                background_img2.paste(cropped_img, tuple(field_locations[field_id][:2]))
+                epd.DisplayPartial(epd.getbuffer(background_img2))
+                last_img = background_img2
+            except:
+                print('gg')
+        print('updated field {0} with val {1}'.format(field_id, field_val))
+
+def async_update_display_partial(field_id, field_val, field_font=field_font): # num, text
+    cmd_buf.write_one((field_id, field_val))
+
+cmd_buf = circular_buffer.circular_buffer(4, 1, object, False, False)
+partial_update_daemon = threading.Thread(target=update_display_partial)
+partial_update_daemon.daemon = True
+partial_update_daemon.start()
 # threading.Thread(target=_update_triggerless).start()
 
 

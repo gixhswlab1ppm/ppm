@@ -6,7 +6,7 @@ class profile_manager:
     def __init__(self, file_path):
         self.profiles = json.load(open(file_path, 'r'))
         self.file_path = file_path
-        self.profile_id = 0
+        self.profile_id = 4
 
     def _get_index(self, _id):
         return [i for i, p in enumerate(self.profiles) if p["id"] == _id][0]

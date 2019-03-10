@@ -1,12 +1,12 @@
 debug = True  # true if output more debug info to console
-simulate = True
+simulate = False
 
 storage_remote = False
 
-dev_arduino = False  # false if data is collected from arduino in real time
+dev_arduino = True  # false if data is collected from arduino in real time
 dev_button = False # true if the start/end physical button is available
-dev_display = False  # true if e-ink display is available
-dev_pi = False  # true if computing is on pi w/ flat folder structure
+dev_display = True  # true if e-ink display is available
+dev_pi = True  # true if computing is on pi w/ flat folder structure
 
 import threading
 if dev_display:
@@ -39,7 +39,7 @@ packet_dt = np.dtype([
     ('a1', np.int16),
     ('a2', np.int16)])  # must be wrapped as a tuple
 packet_fmt = '<Lffffffhhh'
-proc_buff_size = 1 << 8  # 50 dp/sec -> 40 sec
+proc_buff_size = 1 << 9  # 50 dp/sec -> 40 sec
 packet_ver = 1
 n_readers = 4
 
@@ -71,7 +71,6 @@ def swing_counter():
         # based on observation of 15 packet/sec
         chunk = proc_buf.try_read(0, 20)
         if chunk is None:
-            # long sleep until data ready
             time.sleep(5 if is_paused else 1)
             continue
         cluster_ts_per_feature, _ = swing_count_svc(
@@ -81,12 +80,13 @@ def swing_counter():
             profile.get_field("th"))
         swing_count = get_swing_count_from_ts_clusters_by_feature(
             cluster_ts_per_feature)
-        if debug:
-            print('swing counter result available')
         swing_sum += swing_count
-        if dev_display:
-            display.update_display_partial(0, swing_sum)  # TODO async?
-
+        if swing_count > 0:
+            if debug:
+                print('swing counter result available', swing_count, proc_buf.get_len(0))
+            if dev_display:
+                display.async_update_display_partial(1, swing_sum)  # TODO async?
+        time.sleep(0) # yield
 
 def hit_reporter():
     time.sleep(5)
@@ -102,17 +102,18 @@ def hit_reporter():
             continue
         h_dt, h_st, h_events = hit_report_svc(
             np.array(chunk.tolist()).reshape(len(chunk), len(packet_dt)), 0, [7, 8, 9])
-        if debug:
-            print('hit detector result available')
-        if dev_display:
-            dt_avg = 0.8*dt_avg + 0.2*h_dt
-            st_avg = 0.8*st_avg + 0.2*h_st
-            count_delta = len(h_dt)
-            if count_delta > 0:
-                count_sum += count_delta
-                display.update_display_partial(1, count_sum)
-                display.update_display_partial(2, int(100 * dt_avg))
-                display.update_display_partial(3, int(100 * st_avg))
+        count_delta = len(h_dt)
+        if count_delta > 0:
+            if debug:
+                print('hit detector result available', len(h_dt), proc_buf.get_len(1))
+            dt_avg = 0.8*dt_avg + 0.2*np.average(h_dt)
+            st_avg = 0.8*st_avg + 0.2*np.average(h_st)
+            count_sum += count_delta
+            if dev_display:
+                display.async_update_display_partial(0, count_sum)
+                display.async_update_display_partial(2, int(100 * dt_avg))
+                display.async_update_display_partial(3, int(100 * st_avg))
+        time.sleep(0)
 
 
 def fft_near_realtime():
@@ -145,7 +146,7 @@ def on_navigate_to_profile_screen():
     global ui_state
     ui_state = 1
     if dev_display:
-        threading.Thread(target=display.render_profile_screen).start()
+        threading.Thread(target=display.render_profile_screen, args=(profile.get_id(), )).start()
     profile_start_time = time.time()
     if dev_button:
         button.when_pressed = profile_screen_button_handler
@@ -194,18 +195,15 @@ def on_navigate_to_run_screen():
     ui_state = 3
     worker_threads = [swing_counter, hit_reporter]
     for th in worker_threads:
-        threading.Thread(target=th).start()
+        thr = threading.Thread(target=th)
+        thr.daemon = True
+        thr.start()
     if dev_display:
         threading.Thread(target=display.render_run_screen).start()
     if dev_button:
         button.when_pressed = run_screen_button_handler
 
-
-if __name__ == "__main__":
-    on_navigate_to_profile_screen()
-    th = profile.get_field("th")
-
-    # scenario: simulation
+def communication_start():
     if simulate:
         if debug:
             print('simulation starts')
@@ -222,12 +220,7 @@ if __name__ == "__main__":
         data = json.load(open(file_path + '1551925483_0.json', 'r'))
         data = np.array([tuple(s) for s in data], dtype=packet_dt)
         threading.Thread(target=run_simulate, args=(data,)).start()
-
-    if th is None:
-        on_navigate_to_train_screen()
-    on_navigate_to_run_screen()
-
-    if dev_arduino:
+    elif dev_arduino:
         if debug:
             n_packet = 0
             n_packet_success = 0
@@ -254,7 +247,7 @@ if __name__ == "__main__":
                         print('packet abandoned due to decode error')
 
             # data validation (no guarantee even if passed)
-            if not len(packet) == len(packet_dt):
+            if (packet is None) or (not len(packet) == len(packet_dt)):
                 continue
 
             if debug:
@@ -264,3 +257,15 @@ if __name__ == "__main__":
                         n_packet_success/n_packet))
 
             proc_buf.write_one(packet)
+
+if __name__ == "__main__":
+    on_navigate_to_profile_screen()
+    commu_daemon = threading.Thread(target=communication_start)
+    commu_daemon.daemon = True
+    commu_daemon.start()
+    th = profile.get_field("th")
+    if th is None:
+        on_navigate_to_train_screen()
+    on_navigate_to_run_screen()
+    commu_daemon.join() # prevent from quiting
+

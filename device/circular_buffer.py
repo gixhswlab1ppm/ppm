@@ -4,7 +4,7 @@ import time
 import math
 import json
 
-debug = True
+debug = False
 
 storage_svc = None
 storage_user = None
@@ -40,19 +40,21 @@ class circular_buffer():
     - Per-epoch dump to local/remote
     - Custom datatype
     '''
-    def __init__(self, max_len, n_readers, dtype, storage_remote): 
+    def __init__(self, max_len, n_readers, dtype, storage_remote, storage_local=True): 
         self._lock = threading.Lock()
         if storage_remote:
             init_storage()
         self._maxlen = max_len
         self._buf = np.empty((self._maxlen, ), dtype=dtype)
-        self._dtype_has_fields = self._buf.dtype.fields is None
+        # self._dtype_has_fields = self._buf.dtype.fields is None
         self._valid = False*np.ones((n_readers, self._maxlen, ), dtype=bool)
         # pos to read; no check for writers
         self._readers = [self._maxlen-1]*n_readers
         self._writer = self._maxlen-1  # position to write; no check for readers
         self._epoch = 0
         self._ts = math.floor(time.time())
+        self._storage_local = storage_local
+        self._storage_remote  = storage_remote
 
     def write_one(self, data):
         with self._lock:
@@ -61,10 +63,12 @@ class circular_buffer():
                              self._writer and self._valid[i, r] == True else r for i, r in enumerate(self._readers)]
             self._valid[:, self._writer] = True
             if self._writer == 0:  # reached 1 epoch, now dumping to file; synchronous for now
-                file_name = str(self._ts) + "_" + str(self._epoch) + ".json"
-                json.dump(np.flip(self._buf, axis=0).tolist(), open(file_name, 'w')) # only supports serializable dtype or serializable fields of dtype
-                
-                if not (storage_svc is None) and not (storage_user is None):
+                if self._storage_local or self._storage_remote:
+                    file_content = np.flip(self._buf, axis=0).tolist()
+                if self._storage_local:
+                    file_name = str(self._ts) + "_" + str(self._epoch) + ".json"
+                    json.dump(file_content, open(file_name, 'w')) # only supports serializable dtype or serializable fields of dtype
+                if self._storage_remote and not (storage_svc is None) and not (storage_user is None):
                 # as admin - TRY NOT TO USE
                 # storage.child("images/example.jpg").put("example2.jpg")
                 # as user - THIS SHOULD WORK
@@ -73,7 +77,7 @@ class circular_buffer():
                             print("sending file {0} to firebase".format(file_name))
                         file_name_hack = int(100*(time.time() - 1550776545)/10800)
                         child = storage_svc.child(str(file_name_hack) + ".json")
-                        resp = child.put(file_name, storage_user['idToken'])
+                        resp = child.put(file_content, storage_user['idToken'])
                         if debug:
                             print("file transmission succeeded")
                     except Exception:
@@ -102,10 +106,10 @@ class circular_buffer():
         if n_offset <0:
             n_offset = n_read
         with self._lock:
+            if debug:
+                print('valid item count before read {0} is {1}'.format(reader_idx, np.sum(self._valid[reader_idx, :])))
             if reader_idx >= len(self._readers) or n_read > self._maxlen or n_offset > n_read:
                 raise Exception()
-            if debug:
-                print('valid item count for read {0} is {1}'.format(reader_idx, np.sum(self._valid[reader_idx, :])))
             reader = self._readers[reader_idx]
             result = np.empty(0, dtype=self._buf.dtype)
             if reader + 1 < n_read:
@@ -118,18 +122,22 @@ class circular_buffer():
                     return None
                 result = np.hstack(
                     [result, self._buf[reader-n_read+1:reader+1][::-1]])
+            
             if reader + 1 < n_offset:
                 self._valid[reader_idx, :reader+1] = False
                 self._valid[reader_idx, -(n_offset-reader-1):] = False
             else:
                 self._valid[reader_idx, reader-n_offset+1:reader+1] = False
+            
             if len(result) == 0:
                 # print('None')
                 return None
             self._readers[reader_idx] = (reader - n_offset) % self._maxlen
             # if debug:
             #     print('reader {0} result {1}'.format(reader_idx, result))
-            return np.array(result)
+            if debug:
+                print('valid item count after read {0} is {1}'.format(reader_idx, np.sum(self._valid[reader_idx, :])))
+        return np.array(result)
 
     def get_len(self, reader_idx):
         return np.sum(self._valid[reader_idx])
