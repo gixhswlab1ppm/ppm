@@ -4,9 +4,16 @@ simulate = False
 storage_remote = False
 
 dev_arduino = True  # false if data is collected from arduino in real time
-dev_button = False # true if the start/end physical button is available
+dev_button = True # true if the start/end physical button is available
 dev_display = True  # true if e-ink display is available
 dev_pi = True  # true if computing is on pi w/ flat folder structure
+
+# 0x68
+from mpu6050 import mpu6050
+mpu = mpu6050(0x68)
+from Adafruit_ADS1x15 import ADS1115
+adc = ADS1115()
+
 
 import threading
 if dev_display:
@@ -15,12 +22,13 @@ if dev_display:
 
 if dev_button:
     from gpiozero import Button
-    button = Button(7)
+    button = Button(21)
 
 if dev_arduino:
     # 15200, ttyACM0, ttyUSB0, serial0
-    import serial
-    dev = serial.Serial('/dev/serial0', 9600)
+    # import serial
+    # dev = serial.Serial('/dev/serial0', 9600)
+    dev = None
 
 import time
 import numpy as np
@@ -40,7 +48,7 @@ packet_dt = np.dtype([
     ('a2', np.int16)])  # must be wrapped as a tuple
 packet_fmt = '<Lffffffhhh'
 proc_buff_size = 1 << 9  # 50 dp/sec -> 40 sec
-packet_ver = 1
+packet_ver = 2
 n_readers = 4
 
 is_paused = False  # arduino data handling switch
@@ -190,6 +198,11 @@ def on_navigate_to_run_screen():
         is_paused = not is_paused
         if debug:
             print('activity ', 'paused' if is_paused else 'resumed')
+        if dev_display:
+            if is_paused:
+                threading.Thread(target=display.render_pause_screen).start()
+            else:
+                threading.Thread(target=display.render_run_screen).start()
 
     global ui_state
     ui_state = 3
@@ -224,6 +237,8 @@ def communication_start():
         if debug:
             n_packet = 0
             n_packet_success = 0
+        addr_adc = 0x48
+        addr_mpu = 0x68
         import ujson
         while True:
             if debug:
@@ -236,7 +251,7 @@ def communication_start():
                 if not len(res) == (1 + packet_dt.itemsize):
                     continue
                 packet = tuple(struct.unpack_from(packet_fmt, res))
-            else:
+            elif packet_ver == 1:
                 try:
                     res = str(dev.read_until())
                     res = res[res.find('['):res.find(']')+1]
@@ -245,9 +260,12 @@ def communication_start():
                 except:
                     if debug:
                         print('packet abandoned due to decode error')
-
+            elif packet_ver == 2:
+                mpu_raw = mpu.get_all_data()
+                packet = (time.time(), mpu_raw[0]['x'],mpu_raw[0]['y'],mpu_raw[0]['z'],mpu_raw[1]['x'],mpu_raw[1]['y'],mpu_raw[1]['z'], adc.read_adc(0), adc.read_adc(1), adc.read_adc(2))
             # data validation (no guarantee even if passed)
-            if (packet is None) or (not len(packet) == len(packet_dt)):
+            if (packet is None):
+            #or (not len(packet) == len(packet_dt)):
                 continue
 
             if debug:
