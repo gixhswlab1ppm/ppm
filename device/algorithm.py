@@ -11,7 +11,7 @@ dir_path = os.path.dirname(os.path.realpath(__file__))
 visualize = False
 debug = False
 
-hit_th = 10
+hit_th = 200
 hit_cluster_size = 1000
 ts_col = 0
 mpu_cols = [1, 2, 3, 4, 5, 6]
