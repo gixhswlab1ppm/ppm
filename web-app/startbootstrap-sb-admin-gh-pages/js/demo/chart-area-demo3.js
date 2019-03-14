@@ -53,9 +53,9 @@ function refresh_canvas(canvasObj, canvasID, newID) {
  * Called on document load, so it is used to default-load the first filename in the log file.
  * TODO: Alter to add in the user ID of the page, and to include more information (e.g. timestamp)
  */
-function load_filenames() {    
+function load_filenames() {
   console.log('accessing file: log.json');
-  storageRef.child('log.json').getDownloadURL().then(function (url) {
+  storageRef.child('log3.json').getDownloadURL().then(function (url) {
       var xhr = new XMLHttpRequest();
       xhr.responseType = 'json';
       // asynch stuff, this is basically our main
@@ -80,12 +80,12 @@ function load_filenames() {
               document.getElementById("row" + k.toString()).appendChild(tDate);
               var tTime = document.createElement("td");
               document.getElementById("row" + k.toString()).appendChild(tTime);
-              
+
               //canvasObj.setAttribute('id', newID);
               //canvasObj.setAttribute('width', "100%");
               //canvasObj.setAttribute('height', "30");
               //document.getElementById("storageTable").appendChild(canvasObj);
-              
+
               load_file(filenames[0]);
           }
           // Call the dataTables jQuery plugin
@@ -106,7 +106,7 @@ function load_filenames() {
 /* This loads the file within the Firebase Cloud Storage with filename of the given parameter
  * Loads with x acceleration in the raw data as a default.
  */
-function load_file(filename) {    
+function load_file(filename) {
   console.log('accessing file: ' + filename + '.json');
   storageRef.child(filename + '.json').getDownloadURL().then(function (url) {
       var xhr = new XMLHttpRequest();
@@ -115,21 +115,21 @@ function load_file(filename) {
       xhr.onload = function () {
           // parse data once you've got it
           parse_data(xhr.response);
-          
+
           // Call line_chart on data with scaling, see above
           imp_line_canvas = refresh_canvas(imp_line_canvas, "canvas1", "impactChart");
-          line_chart("impactChart", "Impact Strength", impact, 0, 
+          line_chart("impactChart", "Impact Strength", impact, 0,
             Math.ceil(impact.reduce(function(a, b) { return Math.max(a, b); }) / 8) * 8);
-          
+
           // call bar_chart on impact data with thresholding
           imp_bar_canvas = refresh_canvas(imp_bar_canvas, "canvas2", "impactBarChart");
-          bar_chart("impactBarChart", "Impact Strength", impact_bar, 0, 
+          bar_chart("impactBarChart", "Impact Strength", impact_bar, 0,
             Math.ceil(impact_bar.datasets[0].data.reduce(function(a, b) { return Math.max(a+5, b+5); })));
-          
+
           // Call line_chart on acceleration data as a default, this canvas gets changed by
           // button onclick calls to switch_raw()
           raw_canvas = refresh_canvas(raw_canvas, "canvas3", "rawData");
-          line_chart("rawData", "Acceleration Speed", accel_x, 
+          line_chart("rawData", "Acceleration Speed", accel_x,
             accel_x.reduce(function(a, b) { return Math.min(a, b); }), accel_x.reduce(function(a, b) { return Math.max(a, b); }));
       };
       xhr.open('GET', url);
@@ -206,11 +206,11 @@ function parse_data(raw) {
   for (var key in data) {
     // console.log(data[key])
     // console.log(data[key]["time"])
-    
+
     // Create a time-series array for x axis for time series
     labels.push(data[key].time);
-    
-    /*  Calculate how hard the ball hit and 
+
+    /*  Calculate how hard the ball hit and
         add it to an array for y axis */
     scaled_impact = Math.log(data[key].p_1 + data[key].p_1 + data[key].p_1 / 3);
     impact.push(Math.round((scaled_impact) * 100) / 100);
@@ -233,7 +233,7 @@ function parse_data(raw) {
         borderWidth: 1,
         data: [0, 0]}]
     };
-    
+
     // catch zeroes and negative infinities from final list
     for (var j = 0; j < impact.length; j++) {
       if (impact[j] == Number.NEGATIVE_INFINITY) {
@@ -266,7 +266,7 @@ function parse_data(raw) {
         gyros[h][0].push(sign * temp);
     }
   }
-  
+
   raws = [accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z];
 }
 
@@ -377,11 +377,11 @@ function bar_chart(chart_name, item_label, data, minScale, maxScale) {
  * */
 function switch_raw(imu) {
     raw_canvas = refresh_canvas(raw_canvas, "canvas3", "rawData");
-    
+
     document.getElementById("rawTitle").innerHTML = raws_name[parseInt(imu)];
-    
-    // Call line_chart on acceleration data           
-    line_chart("rawData", raws_name[parseInt(imu)], raws[parseInt(imu)], 
+
+    // Call line_chart on acceleration data
+    line_chart("rawData", raws_name[parseInt(imu)], raws[parseInt(imu)],
         raws[parseInt(imu)].reduce(function(a, b) { return Math.min(a, b); }), raws[parseInt(imu)].reduce(function(a, b) { return Math.max(a, b); }));
 }
 
